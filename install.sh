@@ -10,20 +10,22 @@ echo "Installing viland..."
 # Create venv and install dependencies
 if [ ! -d "$VENV_DIR" ]; then
     echo "Creating virtual environment..."
-    python3 -m venv "$VENV_DIR"
+    uv venv "$VENV_DIR"
 fi
 
 echo "Installing dependencies..."
-"$VENV_DIR/bin/pip" install -e .
+cd "$VILAND_DIR"
+uv sync
 
 # Create config directory
 mkdir -p "$CONFIG_DIR"
 
 # Create udevmon config
 echo "Creating udevmon config..."
+PYTHON_BIN="$VENV_DIR/bin/python"
 sudo tee /etc/interception/udevmon.d/viland.yaml > /dev/null << EOF
 # Viland config for udevmon (chained with caps2esc)
-- JOB: intercept -g $DEVNODE | caps2esc | $VENV_DIR/bin/python -m viland.filter | uinput -d $DEVNODE
+- JOB: intercept -g $DEVNODE | caps2esc | $PYTHON_BIN -m viland.filter | uinput -d $DEVNODE
   DEVICE:
     EVENTS:
       EV_KEY: [KEY_CAPSLOCK, KEY_ESC, KEY_H, KEY_J, KEY_K, KEY_L, KEY_W, KEY_B, KEY_E, KEY_Q, KEY_I, KEY_A, KEY_0, KEY_G, KEY_D, KEY_Y, KEY_C, KEY_U, KEY_R, KEY_P, KEY_SLASH, KEY_O, KEY_S, KEY_X, KEY_N, KEY_Z, KEY_V]
