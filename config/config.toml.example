@@ -1,0 +1,13 @@
+double_tap_timeout = 0.5
+
+[keymap]
+# Key mapping in normal mode
+q = "left"
+h = "down"
+j = "left"
+k = "up"
+l = "right"
+
+[notification]
+enabled = true
+timeout = 500

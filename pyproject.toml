@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "viland"
+version = "0.1.0"
+description = "Vim-like binding daemon for Wayland"
+requires-python = ">=3.10"
+dependencies = ["evdev>=1.0", "python-uinput>=0.11"]
+
+[project.scripts]
+viland = "viland.daemon:main"
