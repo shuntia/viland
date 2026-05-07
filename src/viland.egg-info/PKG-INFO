@@ -8,3 +8,4 @@ Requires-Dist: python-uinput>=0.11
 Requires-Dist: toml>=0.10
 Requires-Dist: pystray
 Requires-Dist: Pillow
+Requires-Dist: inputs

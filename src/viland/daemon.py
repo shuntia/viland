@@ -62,6 +62,7 @@ def notify(msg: str):
 class YdotoolKeyboard:
     def __init__(self):
         self.available = self._check_ydotool()
+        self.last_injected_time = 0.0
 
     def _check_ydotool(self) -> bool:
         try:
@@ -77,6 +78,7 @@ class YdotoolKeyboard:
     def emit_key(self, code: int, pressed: bool = True):
         if not self.available:
             return
+        self.last_injected_time = time.time()
         try:
             subprocess.run(
                 ['ydotool', 'key', f'{code}:{1 if pressed else 0}'],
@@ -85,6 +87,10 @@ class YdotoolKeyboard:
             )
         except Exception as e:
             logger.debug(f"ydotool key failed: {e}")
+
+    def is_our_injection(self) -> bool:
+        """Check if event came from our injection (within last 50ms)"""
+        return time.time() - self.last_injected_time < 0.05
 
     def emit_sequence(self, codes: List[int]):
         for code in codes:
@@ -116,6 +122,7 @@ class VilandDaemon:
         self.alt_pressed = False
         self._write_pid()
         self._start_tray()
+        # Don't grab at start - will grab when entering normal mode
 
     def _write_pid(self):
         pid_file = os.path.expanduser('~/.config/viland/viland.pid')
@@ -207,6 +214,10 @@ class VilandDaemon:
         return None
 
     def handle_event(self, event: evdev.InputEvent):
+        # Ignore our own injected events to prevent loops
+        if self.keyboard.is_our_injection():
+            return
+
         if event.type != evdev.ecodes.EV_KEY:
             return
 
@@ -216,46 +227,44 @@ class VilandDaemon:
         # Check for exit override (Ctrl+Alt+Q or Ctrl+Alt+Delete)
         self._check_exit_override(code, pressed)
 
-        # Caps2esc: capslock as escape on tap, ctrl on hold
+        # Caps2esc: capslock as escape on tap
         if self.caps2esc and code == CAPSLOCK and pressed:
             if self.state_machine.is_normal_mode():
                 self.state_machine.exit_normal_mode()
-                self._ungrab_devices()
                 self.show_notification("Insert Mode")
-                return
             else:
                 now = time.time()
                 if now - self.last_key_time < self.state_machine.double_tap_timeout:
                     self.state_machine.mode = Mode.NORMAL
-                    self._grab_devices()
                     self.show_notification("Normal Mode")
                 self.last_key_time = now
+            # Also pass through capslock
+            self.keyboard.emit_key(code, True)
             return
-
-        # Caps2esc: escape as capslock
-        if self.caps2esc and code == ESC_KEY and pressed:
-            now = time.time()
-            if now - self.last_key_time < 0.3:
-                pass  # Double escape
-            self.last_key_time = now
 
         if not self.state_machine.is_normal_mode():
+            # Idle mode: pass through all keys
+            self.keyboard.emit_key(code, pressed)
             return
 
+        # Normal mode: handle vim keys
         if pressed:
             self.last_key_time = time.time()
 
         if code in MODIFIER_KEYS:
+            self.keyboard.emit_key(code, pressed)
             return
 
         if not pressed:
+            self.keyboard.emit_key(code, pressed)
             return
 
         action = self._get_key_action(code)
         if action:
             self._emit_action(action)
         else:
-            pass
+            # Pass through unmapped keys
+            self.keyboard.emit_key(code, True)
 
     def _cleanup(self):
         self._ungrab_devices()

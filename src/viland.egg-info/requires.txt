@@ -3,3 +3,4 @@ python-uinput>=0.11
 toml>=0.10
 pystray
 Pillow
+inputs
