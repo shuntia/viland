@@ -334,8 +334,10 @@ class VilandDaemon:
         pressed = event.value == 1
         released = event.value == 0
 
-        if code == evdev.ecodes.KEY_CAPSLOCK:
+        if code == evdev.ecodes.KEY_CAPSLOCK and pressed:
+            logger.debug(f"CapsLock: value={event.value}, mode={self.state_machine.mode}")
             mode_changed = self.state_machine.handle_caps_lock()
+            logger.debug(f"Mode changed: {mode_changed}, now in {self.state_machine.mode}")
             if mode_changed:
                 if self.state_machine.is_normal_mode():
                     self.show_notification("Normal Mode")

@@ -34,9 +34,8 @@ class InputHandler:
             for device in self.keyboard_devices:
                 if device.fd == fd:
                     try:
-                        events = device.read()
-                        if events:
-                            return events[0]
+                        for event in device.read():
+                            return event
                     except Exception:
                         continue
         return None
