@@ -1,0 +1,7 @@
+# Viland config for udevmon
+# Run: sudo cp config/viland.yaml /etc/interception/udevmon.d/viland.yaml
+# Then: sudo systemctl restart udevmon
+- JOB: intercept -g $DEVNODE | /home/shuntia/projects/viland/.venv/bin/python -m viland.filter | uinput -d $DEVNODE
+  DEVICE:
+    EVENTS:
+      EV_KEY: [KEY_CAPSLOCK, KEY_ESC, KEY_H, KEY_J, KEY_K, KEY_L, KEY_W, KEY_B, KEY_E, KEY_Q, KEY_I, KEY_A, KEY_0, KEY_G, KEY_D, KEY_Y, KEY_C, KEY_U, KEY_R, KEY_P, KEY_SLASH, KEY_O, KEY_S, KEY_X, KEY_N, KEY_Z, KEY_V]

@@ -1,6 +1,7 @@
 pyproject.toml
 src/viland/__init__.py
 src/viland/daemon.py
+src/viland/filter.py
 src/viland/input_handler.py
 src/viland/key_mapper.py
 src/viland/state_machine.py

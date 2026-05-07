@@ -11,3 +11,4 @@ dependencies = ["evdev>=1.0", "python-uinput>=0.11"]
 
 [project.scripts]
 viland = "viland.daemon:main"
+viland-filter = "viland.filter:main"

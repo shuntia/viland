@@ -1,2 +1,3 @@
 [console_scripts]
 viland = viland.daemon:main
+viland-filter = viland.filter:main
