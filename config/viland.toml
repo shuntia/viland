@@ -8,8 +8,8 @@ caps2esc = true
 # Mode indicator (notify | none)
 notification = "notify"
 
-# Enable system tray icon
-tray = true
+# Enable system tray icon (doesn't work on Wayland without tray manager)
+tray = false
 
 [keys]
 # Normal mode key mappings

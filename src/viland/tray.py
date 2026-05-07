@@ -1,26 +1,22 @@
-import pystray
-from PIL import Image, ImageDraw
 import os
 import signal
-import sys
+import threading
 
 
 def create_icon():
-    size = 64
-    img = Image.new('RGB', (size, size), color='#2d2d2d')
-    d = ImageDraw.Draw(img)
-
-    # Draw V shape
-    d.polygon([(16, 16), (32, 48), (48, 16)], fill='#50fa7b', outline='#50fa7b')
-
-    return img
-
-
-def create_menu():
-    pass
+    try:
+        from PIL import Image, ImageDraw
+        size = 64
+        img = Image.new('RGB', (size, size), color='#2d2d2d')
+        d = ImageDraw.Draw(img)
+        d.polygon([(16, 16), (32, 48), (48, 16)], fill='#50fa7b', outline='#50fa7b')
+        return img
+    except:
+        return None
 
 
 def run_tray():
+    import pystray
     icon = pystray.Icon(
         'viland',
         create_icon(),
@@ -29,11 +25,13 @@ def run_tray():
             pystray.MenuItem('Quit', lambda icon, item: os.kill(os.getpid(), signal.SIGTERM))
         )
     )
-    icon.run()
+    try:
+        icon.run()
+    except Exception:
+        pass
 
 
 def start_tray():
-    import threading
     tray_thread = threading.Thread(target=run_tray, daemon=True)
     tray_thread.start()
     return tray_thread

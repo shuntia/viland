@@ -128,8 +128,8 @@ class VilandDaemon:
             return
         try:
             from .tray import start_tray
-            start_tray()
-            logger.info("System tray started")
+            self._tray_thread = start_tray()
+            logger.info("System tray started (may not work on Wayland)")
         except Exception as e:
             logger.warning(f"Failed to start tray: {e}")
 
