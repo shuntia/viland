@@ -8,6 +8,9 @@ caps2esc = true
 # Mode indicator (notify | none)
 notification = "notify"
 
+# Enable system tray icon
+tray = true
+
 [keys]
 # Normal mode key mappings
 # Arrow keys

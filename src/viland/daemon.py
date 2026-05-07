@@ -4,6 +4,8 @@ import time
 import logging
 import sys
 import os
+import signal
+import atexit
 from typing import Optional, Set, List
 from .state_machine import StateMachine, Mode
 from .input_handler import InputHandler
@@ -110,6 +112,40 @@ class VilandDaemon:
         self.last_key_time = 0.0
         self.grabbed = False
         self.caps2esc = self.config.get('caps2esc', True)
+        self.ctrl_pressed = False
+        self.alt_pressed = False
+        self._write_pid()
+        self._start_tray()
+
+    def _write_pid(self):
+        pid_file = os.path.expanduser('~/.config/viland/viland.pid')
+        os.makedirs(os.path.dirname(pid_file), exist_ok=True)
+        with open(pid_file, 'w') as f:
+            f.write(str(os.getpid()))
+
+    def _start_tray(self):
+        if not self.config.get('tray', True):
+            return
+        try:
+            from .tray import start_tray
+            start_tray()
+            logger.info("System tray started")
+        except Exception as e:
+            logger.warning(f"Failed to start tray: {e}")
+
+    def _check_exit_override(self, code: int, pressed: bool) -> bool:
+        if code == evdev.ecodes.KEY_LEFTCTRL or code == evdev.ecodes.KEY_RIGHTCTRL:
+            self.ctrl_pressed = pressed
+        if code == evdev.ecodes.KEY_LEFTALT or code == evdev.ecodes.KEY_RIGHTALT:
+            self.alt_pressed = pressed
+
+        # Ctrl+Alt+Q or Ctrl+Alt+Delete to exit
+        if pressed and self.ctrl_pressed and self.alt_pressed:
+            if code == evdev.ecodes.KEY_Q or code == evdev.ecodes.KEY_DELETE:
+                logger.info("Exit override triggered")
+                self._cleanup()
+                sys.exit(0)
+        return False
 
     def show_notification(self, message: str):
         if self.config.get('notification') == 'notify':
@@ -177,6 +213,9 @@ class VilandDaemon:
         code = event.code
         pressed = event.value == 1
 
+        # Check for exit override (Ctrl+Alt+Q or Ctrl+Alt+Delete)
+        self._check_exit_override(code, pressed)
+
         # Caps2esc: capslock as escape on tap, ctrl on hold
         if self.caps2esc and code == CAPSLOCK and pressed:
             if self.state_machine.is_normal_mode():
@@ -218,12 +257,21 @@ class VilandDaemon:
         else:
             pass
 
+    def _cleanup(self):
+        self._ungrab_devices()
+        pid_file = os.path.expanduser('~/.config/viland/viland.pid')
+        if os.path.exists(pid_file):
+            os.remove(pid_file)
+
     def run(self):
+        atexit.register(self._cleanup)
+
         if not self.keyboard.available:
             logger.warning("ydotool not available, key injection will not work")
 
         logger.info(f"Viland daemon started (caps2esc={self.caps2esc})")
         logger.info("Double-tap caps lock to enter normal mode")
+        logger.info("Ctrl+Alt+Q to exit daemon")
 
         try:
             while True:
@@ -233,7 +281,7 @@ class VilandDaemon:
         except KeyboardInterrupt:
             logger.info("Viland daemon stopped")
         finally:
-            self._ungrab_devices()
+            self._cleanup()
 
 
 def main():

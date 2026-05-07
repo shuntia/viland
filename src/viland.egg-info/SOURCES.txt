@@ -6,6 +6,7 @@ src/viland/filter.py
 src/viland/input_handler.py
 src/viland/key_mapper.py
 src/viland/state_machine.py
+src/viland/tray.py
 src/viland.egg-info/PKG-INFO
 src/viland.egg-info/SOURCES.txt
 src/viland.egg-info/dependency_links.txt
