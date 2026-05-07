@@ -2,9 +2,8 @@
 import sys
 import struct
 import time
-import logging
-
-logging.basicConfig(level=logging.WARNING)
+import subprocess
+import os
 
 EV_KEY = 0x01
 EV_SYN = 0x00
@@ -15,9 +14,21 @@ ESC = 1
 ARROWS = {'left': 105, 'right': 106, 'up': 103, 'down': 108}
 HOME = 102
 END = 107
+ENTER = 28
+BACKSPACE = 14
 
 DOUBLE_TAP_TIMEOUT = 0.5
 DOUBLE_ESC_TIMEOUT = 0.3
+
+
+def notify(msg):
+    try:
+        subprocess.Popen(['notify-send', '-u', 'low', '-t', '800', 'Viland', msg],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except:
+        pass
+    sys.stderr.write(f"Viland: {msg}\n")
+    sys.stderr.flush()
 
 
 class VilandFilter:
@@ -30,23 +41,31 @@ class VilandFilter:
     def read_event(self):
         try:
             data = sys.stdin.buffer.read(24)
-            if len(data) != 24:
+            if not data:
                 return None
+            if len(data) != 24:
+                return (0, 0, 0)
             sec, usec, tv_sec, tv_usec, type, code, value = struct.unpack('QQHHIii', data)
             return (type, code, value)
-        except:
-            return None
+        except Exception as e:
+            sys.stderr.write(f"Read error: {e}\n")
+            return (0, 0, 0)
 
     def write_event(self, type, code, value):
-        sys.stdout.buffer.write(struct.pack('QQHHIii',
-            0, 0, 0, 0, type, code, value))
-        sys.stdout.buffer.flush()
+        try:
+            sys.stdout.buffer.write(struct.pack('QQHHIii',
+                0, 0, 0, 0, type, code, value))
+            sys.stdout.buffer.flush()
+        except Exception as e:
+            sys.stderr.write(f"Write error: {e}\n")
 
     def emit_key(self, code, value):
         self.write_event(EV_KEY, code, value)
         self.write_event(EV_SYN, 0, 0)
 
     def run(self):
+        notify("Insert Mode")
+
         while True:
             event = self.read_event()
             if event is None:
@@ -64,10 +83,10 @@ class VilandFilter:
                 if now - self.last_esc_time < DOUBLE_ESC_TIMEOUT:
                     self.enabled = not self.enabled
                     if self.enabled:
-                        sys.stderr.write("Viland: Enabled\n")
-                    else:
-                        sys.stderr.write("Viland: Disabled\n")
                         self.mode = 'insert'
+                        notify("Enabled (Insert Mode)")
+                    else:
+                        notify("Disabled")
                 self.last_esc_time = now
 
             if not self.enabled:
@@ -78,10 +97,10 @@ class VilandFilter:
                 if now - self.last_caps_time < DOUBLE_TAP_TIMEOUT:
                     if self.mode == 'insert':
                         self.mode = 'normal'
-                        sys.stderr.write("Viland: Normal Mode\n")
+                        notify("Normal Mode")
                     else:
                         self.mode = 'insert'
-                        sys.stderr.write("Viland: Insert Mode\n")
+                        notify("Insert Mode")
                 self.last_caps_time = now
 
             if self.mode == 'insert':
@@ -98,7 +117,7 @@ class VilandFilter:
 
             if code == 23:  # i
                 self.mode = 'insert'
-                sys.stderr.write("Viland: Insert Mode\n")
+                notify("Insert Mode")
                 self.emit_key(ESC, 1)
                 self.emit_key(ESC, 0)
                 continue
@@ -109,7 +128,7 @@ class VilandFilter:
                 self.emit_key(ESC, 0)
                 self.emit_key(ARROWS['right'], 1)
                 self.emit_key(ARROWS['right'], 0)
-                sys.stderr.write("Viland: Insert Mode\n")
+                notify("Insert Mode")
                 continue
 
             if code == 24:  # o
@@ -117,24 +136,24 @@ class VilandFilter:
                 self.emit_key(END, 1)
                 self.emit_key(END, 0)
                 time.sleep(0.01)
-                self.emit_key(28, 1)  # enter
-                self.emit_key(28, 0)
+                self.emit_key(ENTER, 1)
+                self.emit_key(ENTER, 0)
                 time.sleep(0.01)
                 self.emit_key(ARROWS['up'], 1)
                 self.emit_key(ARROWS['up'], 0)
-                sys.stderr.write("Viland: Insert Mode\n")
+                notify("Insert Mode")
                 continue
 
             if code == 31:  # s
                 self.mode = 'insert'
-                self.emit_key(14, 1)  # backspace
-                self.emit_key(14, 0)
-                sys.stderr.write("Viland: Insert Mode\n")
+                self.emit_key(BACKSPACE, 1)
+                self.emit_key(BACKSPACE, 0)
+                notify("Insert Mode")
                 continue
 
             if code == 45:  # x
-                self.emit_key(14, 1)
-                self.emit_key(14, 0)
+                self.emit_key(BACKSPACE, 1)
+                self.emit_key(BACKSPACE, 0)
                 continue
 
             mapped = {

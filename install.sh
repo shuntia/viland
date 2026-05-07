@@ -23,16 +23,17 @@ mkdir -p "$CONFIG_DIR"
 # Create udevmon config
 echo "Creating udevmon config..."
 PYTHON_BIN="$VENV_DIR/bin/python"
-sudo tee /etc/interception/udevmon.d/viland.yaml > /dev/null << EOF
+sudo tee /etc/interception/udevmon.d/viland.yaml > /dev/null <<'EOF'
 # Viland config for udevmon (chained with caps2esc)
-- JOB: intercept -g $DEVNODE | caps2esc | $PYTHON_BIN -m viland.filter | uinput -d $DEVNODE
+- JOB: intercept -g $DEVNODE | caps2esc | VENV_BIN -m viland.filter | uinput -d $DEVNODE
   DEVICE:
     EVENTS:
       EV_KEY: [KEY_CAPSLOCK, KEY_ESC, KEY_H, KEY_J, KEY_K, KEY_L, KEY_W, KEY_B, KEY_E, KEY_Q, KEY_I, KEY_A, KEY_0, KEY_G, KEY_D, KEY_Y, KEY_C, KEY_U, KEY_R, KEY_P, KEY_SLASH, KEY_O, KEY_S, KEY_X, KEY_N, KEY_Z, KEY_V]
 EOF
+sudo sed -i "s|VENV_BIN|$PYTHON_BIN|g" /etc/interception/udevmon.d/viland.yaml
 
-# Backup and disable caps2esc if needed
-if [ -f /etc/interception/udevmon.d/caps2esc.conf.yaml ]; then
+# Backup and disable caps2esc if needed (only if viland.yaml doesn't exist)
+if [ ! -f /etc/interception/udevmon.d/viland.yaml ] && [ -f /etc/interception/udevmon.d/caps2esc.conf.yaml ]; then
     echo "Backing up caps2esc config..."
     sudo mv /etc/interception/udevmon.d/caps2esc.conf.yaml /etc/interception/udevmon.d/caps2esc.conf.yaml.bak
 fi

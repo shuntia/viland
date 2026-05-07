@@ -22,25 +22,28 @@ class InputHandler:
                     keys = capabilities[evdev.ecodes.EV_KEY]
                     if any(k in keys for k in [evdev.ecodes.KEY_A, evdev.ecodes.KEY_SPACE, evdev.ecodes.KEY_Q]):
                         self.keyboard_devices.append(device)
-            except Exception:
-                continue
+                        logger.info(f"Found keyboard: {device.name} ({device.path})")
+            except Exception as e:
+                logger.warning(f"Error checking device {device.path}: {e}")
 
-    def grab_devices(self):
+    def grab_all_devices(self):
         for device in self.keyboard_devices:
             try:
                 device.grab()
                 self.grabbed_devices.append(device)
-                logger.info(f"Grabbed device: {device.name}")
-            except Exception as e:
+                logger.info(f"Grabbed: {device.name}")
+            except OSError as e:
                 logger.warning(f"Failed to grab {device.name}: {e}")
+            except Exception as e:
+                logger.warning(f"Error grabbing {device.name}: {e}")
 
-    def ungrab_devices(self):
+    def ungrab_all_devices(self):
         for device in self.grabbed_devices:
             try:
                 device.ungrab()
-                logger.info(f"Ungrabbed device: {device.name}")
+                logger.info(f"Ungrabbed: {device.name}")
             except Exception as e:
-                logger.warning(f"Failed to ungrab {device.name}: {e}")
+                logger.warning(f"Error ungrabbing {device.name}: {e}")
         self.grabbed_devices.clear()
 
     def get_keyboard_fds(self) -> List[int]:
@@ -51,13 +54,18 @@ class InputHandler:
         if not fds:
             return None
 
-        r, _, _ = select.select(fds, [], [], timeout)
+        try:
+            r, _, _ = select.select(fds, [], [], timeout)
+        except Exception as e:
+            logger.warning(f"Select error: {e}")
+            return None
+
         for fd in r:
             for device in self.keyboard_devices:
                 if device.fd == fd:
                     try:
                         for event in device.read():
                             return event
-                    except Exception:
-                        continue
+                    except Exception as e:
+                        logger.debug(f"Read error from {device.name}: {e}")
         return None
