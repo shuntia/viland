@@ -6,8 +6,8 @@ import sys
 import os
 from typing import Optional, Set, List
 from .state_machine import StateMachine, Mode
-from .key_mapper import KeyMapper
 from .input_handler import InputHandler
+from .config import load_config, get_action_codes
 
 
 logging.basicConfig(
@@ -30,15 +30,20 @@ MODIFIER_KEYS = {
 }
 
 ARROWS = {
-    'left': 105,
-    'right': 106,
-    'up': 103,
-    'down': 108,
+    'left': [105],
+    'right': [106],
+    'up': [103],
+    'down': [108],
 }
-HOME = 102
-END = 107
-ENTER = 28
-BACKSPACE = 14
+HOME = [102]
+END = [107]
+ENTER = [28]
+BACKSPACE = [14]
+ESC = [1]
+
+CAPSLOCK = 58
+ESC_KEY = 1
+LEFTCTRL = 29
 
 
 def notify(msg: str):
@@ -82,23 +87,33 @@ class YdotoolKeyboard:
     def emit_sequence(self, codes: List[int]):
         for code in codes:
             self.emit_key(code, True)
-            time.sleep(0.015)
+            time.sleep(0.01)
             self.emit_key(code, False)
-            time.sleep(0.015)
+            time.sleep(0.01)
+
+    def emit_action(self, action: str):
+        codes = get_action_codes(action)
+        for code in codes:
+            self.emit_key(code, True)
+            time.sleep(0.01)
+            self.emit_key(code, False)
+            time.sleep(0.01)
 
 
 class VilandDaemon:
-    def __init__(self, double_tap_timeout: float = 0.5):
-        self.state_machine = StateMachine(double_tap_timeout)
+    def __init__(self, config_path: str = None):
+        self.config = load_config(config_path)
+        self.state_machine = StateMachine(self.config['double_tap_timeout'])
         self.input_handler = InputHandler()
         self.keyboard = YdotoolKeyboard()
         self.pressed_keys: Set[int] = set()
-        self.active_modifiers: Set[int] = set()
         self.last_key_time = 0.0
         self.grabbed = False
+        self.caps2esc = self.config.get('caps2esc', True)
 
     def show_notification(self, message: str):
-        notify(message)
+        if self.config.get('notification') == 'notify':
+            notify(message)
 
     def _is_double_press(self) -> bool:
         return time.time() - self.last_key_time < 0.3
@@ -123,36 +138,73 @@ class VilandDaemon:
         except Exception as e:
             logger.error(f"Failed to ungrab devices: {e}")
 
+    def _emit_action(self, action: str):
+        self.keyboard.emit_action(action)
+
+    def _get_key_action(self, code: int) -> Optional[str]:
+        key_map = {
+            evdev.ecodes.KEY_H: 'h',
+            evdev.ecodes.KEY_J: 'j',
+            evdev.ecodes.KEY_K: 'k',
+            evdev.ecodes.KEY_L: 'l',
+            evdev.ecodes.KEY_W: 'w',
+            evdev.ecodes.KEY_B: 'b',
+            evdev.ecodes.KEY_E: 'e',
+            evdev.ecodes.KEY_Q: 'q',
+            evdev.ecodes.KEY_I: 'i',
+            evdev.ecodes.KEY_A: 'a',
+            evdev.ecodes.KEY_O: 'o',
+            evdev.ecodes.KEY_S: 's',
+            evdev.ecodes.KEY_X: 'x',
+            evdev.ecodes.KEY_0: '0',
+            evdev.ecodes.KEY_G: 'g',
+            evdev.ecodes.KEY_N: 'n',
+            evdev.ecodes.KEY_U: 'u',
+            evdev.ecodes.KEY_R: 'r',
+            evdev.ecodes.KEY_P: 'p',
+            evdev.ecodes.KEY_SLASH: '/',
+            evdev.ecodes.KEY_ESC: 'escape',
+        }
+        key = key_map.get(code)
+        if key:
+            return self.config.get('keys', {}).get(key)
+        return None
+
     def handle_event(self, event: evdev.InputEvent):
         if event.type != evdev.ecodes.EV_KEY:
             return
 
         code = event.code
         pressed = event.value == 1
-        released = event.value == 0
 
-        if code == evdev.ecodes.KEY_CAPSLOCK and pressed:
-            now = time.time()
-            if now - self.last_key_time < self.state_machine.double_tap_timeout:
-                if self.state_machine.is_normal_mode():
-                    self.state_machine.exit_normal_mode()
-                    self._ungrab_devices()
-                    self.show_notification("Insert Mode")
-                else:
+        # Caps2esc: capslock as escape on tap, ctrl on hold
+        if self.caps2esc and code == CAPSLOCK and pressed:
+            if self.state_machine.is_normal_mode():
+                self.state_machine.exit_normal_mode()
+                self._ungrab_devices()
+                self.show_notification("Insert Mode")
+                return
+            else:
+                now = time.time()
+                if now - self.last_key_time < self.state_machine.double_tap_timeout:
                     self.state_machine.mode = Mode.NORMAL
                     self._grab_devices()
                     self.show_notification("Normal Mode")
-            self.last_key_time = now
+                self.last_key_time = now
             return
+
+        # Caps2esc: escape as capslock
+        if self.caps2esc and code == ESC_KEY and pressed:
+            now = time.time()
+            if now - self.last_key_time < 0.3:
+                pass  # Double escape
+            self.last_key_time = now
 
         if not self.state_machine.is_normal_mode():
             return
 
         if pressed:
-            self.pressed_keys.add(code)
             self.last_key_time = time.time()
-        elif released:
-            self.pressed_keys.discard(code)
 
         if code in MODIFIER_KEYS:
             return
@@ -160,56 +212,9 @@ class VilandDaemon:
         if not pressed:
             return
 
-        if code == evdev.ecodes.KEY_I:
-            self.state_machine.exit_normal_mode()
-            self._ungrab_devices()
-            self.show_notification("Insert Mode")
-            return
-
-        if code == evdev.ecodes.KEY_A:
-            self.state_machine.exit_normal_mode()
-            self._ungrab_devices()
-            self.keyboard.emit_key(ARROWS['right'])
-            self.show_notification("Insert Mode")
-            return
-
-        if code == evdev.ecodes.KEY_O:
-            self.state_machine.exit_normal_mode()
-            self._ungrab_devices()
-            self.keyboard.emit_key(END)
-            time.sleep(0.02)
-            self.keyboard.emit_key(ENTER)
-            time.sleep(0.02)
-            self.keyboard.emit_key(ARROWS['up'])
-            self.show_notification("Insert Mode")
-            return
-
-        if code == evdev.ecodes.KEY_ESC:
-            self.state_machine.exit_normal_mode()
-            self._ungrab_devices()
-            self.show_notification("Insert Mode")
-            return
-
-        if code == evdev.ecodes.KEY_X:
-            self.keyboard.emit_key(BACKSPACE)
-            return
-
-        mapped = {
-            evdev.ecodes.KEY_H: ARROWS['left'],
-            evdev.ecodes.KEY_J: ARROWS['down'],
-            evdev.ecodes.KEY_K: ARROWS['up'],
-            evdev.ecodes.KEY_L: ARROWS['right'],
-            evdev.ecodes.KEY_W: ARROWS['right'],
-            evdev.ecodes.KEY_B: ARROWS['left'],
-            evdev.ecodes.KEY_E: END,
-            evdev.ecodes.KEY_Q: ARROWS['left'],
-            evdev.ecodes.KEY_0: HOME,
-            evdev.ecodes.KEY_G: HOME,
-            evdev.ecodes.KEY_N: ARROWS['right'],
-        }.get(code)
-
-        if mapped:
-            self.keyboard.emit_key(mapped)
+        action = self._get_key_action(code)
+        if action:
+            self._emit_action(action)
         else:
             pass
 
@@ -217,7 +222,7 @@ class VilandDaemon:
         if not self.keyboard.available:
             logger.warning("ydotool not available, key injection will not work")
 
-        logger.info("Viland daemon started")
+        logger.info(f"Viland daemon started (caps2esc={self.caps2esc})")
         logger.info("Double-tap caps lock to enter normal mode")
 
         try:
@@ -232,7 +237,12 @@ class VilandDaemon:
 
 
 def main():
-    daemon = VilandDaemon()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-c', '--config', help='Config file path')
+    args = parser.parse_args()
+
+    daemon = VilandDaemon(config_path=args.config)
     daemon.run()
 
 

@@ -5,3 +5,4 @@ Summary: Vim-like binding daemon for Wayland
 Requires-Python: >=3.10
 Requires-Dist: evdev>=1.0
 Requires-Dist: python-uinput>=0.11
+Requires-Dist: toml>=0.10
