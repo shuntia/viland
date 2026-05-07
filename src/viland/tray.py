@@ -20,7 +20,7 @@ def create_menu():
     pass
 
 
-def run_tray(quit_event):
+def run_tray():
     icon = pystray.Icon(
         'viland',
         create_icon(),
