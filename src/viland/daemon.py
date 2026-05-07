@@ -340,8 +340,10 @@ class VilandDaemon:
             logger.debug(f"Mode changed: {mode_changed}, now in {self.state_machine.mode}")
             if mode_changed:
                 if self.state_machine.is_normal_mode():
+                    self.input_handler.grab_devices()
                     self.show_notification("Normal Mode")
                 else:
+                    self.input_handler.ungrab_devices()
                     self.show_notification("Idle Mode")
             return
 
