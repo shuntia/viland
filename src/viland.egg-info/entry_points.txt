@@ -1,0 +1,2 @@
+[console_scripts]
+viland = viland.daemon:main
