@@ -12,30 +12,20 @@ EV_SYN = 0x00
 CAPSLOCK = 58
 ESC = 1
 
-KEYS = {
-    'h': 35, 'j': 36, 'k': 37, 'l': 38,
-    'w': 17, 'b': 48, 'e': 18,
-    'q': 16, 'i': 23, 'a': 30,
-    '0': 11, '$': 21, 'g': 34,
-    'd': 32, 'y': 21, 'c': 33,
-    'u': 22, 'r': 19, 'p': 25,
-    '/': 53, 'o': 24, 's': 31,
-    'x': 45, 'v': 47, 'n': 39,
-    'z': 44, 'v': 47,
-}
-
 ARROWS = {'left': 105, 'right': 106, 'up': 103, 'down': 108}
 HOME = 102
 END = 107
 
 DOUBLE_TAP_TIMEOUT = 0.5
+DOUBLE_ESC_TIMEOUT = 0.3
+
 
 class VilandFilter:
     def __init__(self):
         self.mode = 'insert'
+        self.enabled = True
         self.last_caps_time = 0.0
-        self.caps_pressed = False
-        self.buffer = []
+        self.last_esc_time = 0.0
 
     def read_event(self):
         try:
@@ -63,11 +53,26 @@ class VilandFilter:
                 break
 
             type, code, value = event
+
             if type != EV_KEY:
                 self.write_event(type, code, value)
                 continue
 
             now = time.time()
+
+            if code == ESC and value == 1:
+                if now - self.last_esc_time < DOUBLE_ESC_TIMEOUT:
+                    self.enabled = not self.enabled
+                    if self.enabled:
+                        sys.stderr.write("Viland: Enabled\n")
+                    else:
+                        sys.stderr.write("Viland: Disabled\n")
+                        self.mode = 'insert'
+                self.last_esc_time = now
+
+            if not self.enabled:
+                self.write_event(type, code, value)
+                continue
 
             if code == CAPSLOCK and value == 1:
                 if now - self.last_caps_time < DOUBLE_TAP_TIMEOUT:
@@ -91,14 +96,14 @@ class VilandFilter:
                 self.write_event(type, code, value)
                 continue
 
-            if code == 23:
+            if code == 23:  # i
                 self.mode = 'insert'
                 sys.stderr.write("Viland: Insert Mode\n")
                 self.emit_key(ESC, 1)
                 self.emit_key(ESC, 0)
                 continue
 
-            if code == 30:
+            if code == 30:  # a
                 self.mode = 'insert'
                 self.emit_key(ESC, 1)
                 self.emit_key(ESC, 0)
@@ -107,18 +112,44 @@ class VilandFilter:
                 sys.stderr.write("Viland: Insert Mode\n")
                 continue
 
+            if code == 24:  # o
+                self.mode = 'insert'
+                self.emit_key(END, 1)
+                self.emit_key(END, 0)
+                time.sleep(0.01)
+                self.emit_key(28, 1)  # enter
+                self.emit_key(28, 0)
+                time.sleep(0.01)
+                self.emit_key(ARROWS['up'], 1)
+                self.emit_key(ARROWS['up'], 0)
+                sys.stderr.write("Viland: Insert Mode\n")
+                continue
+
+            if code == 31:  # s
+                self.mode = 'insert'
+                self.emit_key(14, 1)  # backspace
+                self.emit_key(14, 0)
+                sys.stderr.write("Viland: Insert Mode\n")
+                continue
+
+            if code == 45:  # x
+                self.emit_key(14, 1)
+                self.emit_key(14, 0)
+                continue
+
             mapped = {
-                35: ARROWS['left'],
-                36: ARROWS['down'],
-                37: ARROWS['up'],
-                38: ARROWS['right'],
-                17: ARROWS['right'],
-                48: ARROWS['left'],
-                18: 107,
-                16: 105,
-                11: 102,
-                21: 107,
-                34: 102,
+                35: ARROWS['left'],   # h
+                36: ARROWS['down'],   # j
+                37: ARROWS['up'],     # k
+                38: ARROWS['right'],  # l
+                17: ARROWS['right'],  # w
+                48: ARROWS['left'],   # b
+                18: END,              # e
+                16: ARROWS['left'],   # q
+                11: HOME,             # 0
+                21: END,              # $
+                34: HOME,             # g
+                39: 106,              # n (next search = right)
             }.get(code)
 
             if mapped:
@@ -130,6 +161,7 @@ class VilandFilter:
 
 def main():
     VilandFilter().run()
+
 
 if __name__ == '__main__':
     main()
