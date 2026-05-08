@@ -9,7 +9,6 @@ pub enum Mode {
 #[derive(Debug, Clone, Copy)]
 pub enum KeyAction {
     Press(u16),
-    Release(u16),
     Tap(u16),
     SwitchMode(Mode),
 }

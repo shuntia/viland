@@ -67,7 +67,10 @@ impl State {
 
     fn switch_mode(&mut self, new_mode: Mode, device_manager: &mut DeviceManager) {
         if self.mode != new_mode {
-            debug!("Switching from {:?} to {:?}", self.mode, new_mode);
+            info!("Switching from {:?} to {:?}", self.mode, new_mode);
+            let _ = std::process::Command::new("notify-send")
+                .args(["-t", "800", "-h", "string:x-canonical-private-synchronous:viland", "Viland", &format!("Mode: {:?}", new_mode)])
+                .spawn();
             self.release_all_virtual(device_manager);
             self.mode = new_mode;
             self.last_caps_release = None;
@@ -170,7 +173,7 @@ impl State {
                                 KeyAction::SwitchMode(new_mode) => {
                                     self.switch_mode(new_mode, device_manager);
                                 }
-                                _ => {}
+                                KeyAction::Tap(_) => {}
                             }
                         }
                     }
@@ -200,23 +203,21 @@ impl State {
                                 }
                                 KeyAction::Tap(key) => {
                                     device_manager.emit_key_press(key)?;
+                                    self.virtual_pressed.insert(key);
                                     device_manager.emit_key_release(key)?;
+                                    self.virtual_pressed.remove(&key);
                                 }
                                 KeyAction::SwitchMode(new_mode) => {
                                     self.switch_mode(new_mode, device_manager);
                                 }
-                                KeyAction::Release(_) => {}
                             }
                         }
                     }
                     KeyState::Release => {
                         for action in actions.iter().rev() {
-                            match *action {
-                                KeyAction::Release(key) => {
-                                    device_manager.emit_key_release(key)?;
-                                    self.virtual_pressed.remove(&key);
-                                }
-                                _ => {}
+                            if let KeyAction::Press(key) = *action {
+                                device_manager.emit_key_release(key)?;
+                                self.virtual_pressed.remove(&key);
                             }
                         }
                     }

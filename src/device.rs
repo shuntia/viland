@@ -75,6 +75,10 @@ impl DeviceManager {
         match Device::open(path) {
             Ok(mut device) => {
                 if self.is_keyboard(&device) {
+                    if let Err(e) = device.set_nonblocking(true) {
+                        warn!("Failed to set non-blocking on {}: {}", path.display(), e);
+                        return;
+                    }
                     if let Err(e) = device.grab() {
                         warn!("Failed to grab device {}: {}", path.display(), e);
                         return;
@@ -127,7 +131,7 @@ impl DeviceManager {
         let c_path = std::ffi::CString::new("/dev/input").unwrap();
         unsafe {
             let mask = libc::IN_CREATE | libc::IN_DELETE;
-            let wd = libc::inotify_add_watch(self.inotify_fd, c_path.as_ptr(), mask as u32);
+            let wd = libc::inotify_add_watch(self.inotify_fd, c_path.as_ptr(), mask);
             if wd < 0 {
                 warn!("Failed to add inotify watch: {}", std::io::Error::last_os_error());
             }
@@ -162,7 +166,7 @@ impl DeviceManager {
                 if code == 44 { has_z = true; }
                 if code == 28 { has_enter = true; }
                 if code == 57 { has_space = true; }
-                if code >= 30 && code <= 55 {
+                if (30..=55).contains(&code) {
                     alpha_count += 1;
                 }
             }
@@ -229,9 +233,9 @@ impl DeviceManager {
 
         let mut fds_to_remove = Vec::new();
 
-        for i in 0..n as usize {
-            let fd = ready_list[i].u64 as RawFd;
-            let revents = ready_list[i].events as i32;
+        for item in ready_list.iter().take(n as usize) {
+            let fd = item.u64 as RawFd;
+            let revents = item.events as i32;
 
             if fd == self.inotify_fd {
                 self.handle_inotify();
@@ -308,10 +312,10 @@ impl DeviceManager {
                 if let Ok(name_str) = name_cstr.to_str() {
                     if name_str.starts_with("event") {
                         let path = PathBuf::from("/dev/input").join(name_str);
-                        if event.mask & libc::IN_CREATE as u32 != 0 {
+                        if event.mask & libc::IN_CREATE != 0 {
                             info!("Inotify: New device detected: {}", path.display());
                             self.try_add_device(&path);
-                        } else if event.mask & libc::IN_DELETE as u32 != 0 {
+                        } else if event.mask & libc::IN_DELETE != 0 {
                             info!("Inotify: Device removed: {}", name_str);
                         }
                     }

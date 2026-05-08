@@ -75,6 +75,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         if SHOULD_EXIT.load(Ordering::SeqCst) {
             info!("Received signal, shutting down gracefully");
+            let _ = std::process::Command::new("notify-send")
+                .args(["-t", "1500", "Viland", "Shutting down..."])
+                .spawn();
             state.release_all_virtual(&mut device_manager);
             device_manager.ungrab_all();
             return Ok(());
@@ -89,6 +92,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     if state.should_exit() {
                         info!("Emergency exit triggered");
+                        let _ = std::process::Command::new("notify-send")
+                            .args(["-t", "1500", "Viland", "Emergency Exit"])
+                            .spawn();
                         state.release_all_virtual(&mut device_manager);
                         device_manager.ungrab_all();
                         return Ok(());

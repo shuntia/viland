@@ -53,16 +53,14 @@ pub struct Event {
     pub device_id: u32,
     pub key_code: u16,
     pub key_state: KeyState,
-    pub timestamp: u64,
 }
 
 impl Event {
-    pub fn new(device_id: u32, key_code: u16, key_state: KeyState, timestamp: u64) -> Self {
+    pub fn new(device_id: u32, key_code: u16, key_state: KeyState, _timestamp: u64) -> Self {
         Self {
             device_id,
             key_code,
             key_state,
-            timestamp,
         }
     }
 
