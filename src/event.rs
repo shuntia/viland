@@ -29,6 +29,14 @@ pub const KEY_J: u16 = 36;
 pub const KEY_K: u16 = 37;
 pub const KEY_L: u16 = 38;
 pub const KEY_W: u16 = 17;
+pub const KEY_Y: u16 = 21;
+pub const KEY_U: u16 = 22;
+pub const KEY_P: u16 = 25;
+pub const KEY_SLASH: u16 = 53;
+pub const KEY_F: u16 = 33;
+pub const KEY_C: u16 = 46;
+pub const KEY_V: u16 = 47;
+pub const KEY_Z: u16 = 44;
 
 pub const KEY_1: u16 = 2;
 pub const KEY_2: u16 = 3;

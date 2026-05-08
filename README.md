@@ -31,6 +31,12 @@ In Normal mode, the following mappings are active:
 - `i`: Switch to Insert mode
 - `a`: Tap `Right` and switch to Insert mode
 
+### Editing
+- `y`: Copy (`CTRL` + `C`)
+- `p`: Paste (`CTRL` + `V`)
+- `u`: Undo (`CTRL` + `Z`)
+- `/`: Find (`CTRL` + `F`)
+
 ### Chords (META)
 Pressing number keys in Normal mode emits a `META` + `Number` chord:
 - `1` - `0`: Emits `META` + `1` - `0` (as a tapped event).
