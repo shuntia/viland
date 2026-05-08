@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::time::Instant;
 
 use crate::device::DeviceManager;
-use crate::event::{KeyState, KEY_ESC, KEY_LEFTCTRL, KEY_LEFTALT};
+use crate::event::{KeyState, KEY_ESC, KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHTCTRL, KEY_RIGHTALT};
 use crate::keymap::{Action, KeyAction, Keymap, Mode};
 use crate::VilandError;
 use tracing::debug;
@@ -65,6 +65,15 @@ impl State {
         }
     }
 
+    fn switch_mode(&mut self, new_mode: Mode, device_manager: &mut DeviceManager) {
+        if self.mode != new_mode {
+            debug!("Switching from {:?} to {:?}", self.mode, new_mode);
+            self.release_all_virtual(device_manager);
+            self.mode = new_mode;
+            self.last_caps_release = None;
+        }
+    }
+
     fn handle_insert_mode(
         &mut self,
         ev: crate::event::Event,
@@ -96,6 +105,7 @@ impl State {
 
         match ev.key_state {
             KeyState::Press => {
+                self.last_caps_release = None;
                 device_manager.emit_key_press(ev.key_code)?;
                 self.virtual_pressed.insert(ev.key_code);
             }
@@ -116,6 +126,13 @@ impl State {
         ev: crate::event::Event,
         device_manager: &mut DeviceManager,
     ) -> Result<(), VilandError> {
+        // Always allow release of keys that were pressed in another mode
+        if ev.key_state == KeyState::Release && self.virtual_pressed.contains(&ev.key_code) {
+            device_manager.emit_key_release(ev.key_code)?;
+            self.virtual_pressed.remove(&ev.key_code);
+            return Ok(());
+        }
+
         let action = self.keymap.get_action(ev.key_code, self.mode);
 
         match action {
@@ -124,8 +141,7 @@ impl State {
             }
             Action::Ignore => {}
             Action::SwitchMode(new_mode) => {
-                self.mode = new_mode;
-                debug!("Switched to {:?}", self.mode);
+                self.switch_mode(new_mode, device_manager);
             }
             Action::Emit(key) => {
                 match ev.key_state {
@@ -152,7 +168,7 @@ impl State {
                                     self.virtual_pressed.insert(key);
                                 }
                                 KeyAction::SwitchMode(new_mode) => {
-                                    self.mode = new_mode;
+                                    self.switch_mode(new_mode, device_manager);
                                 }
                                 _ => {}
                             }
@@ -184,10 +200,10 @@ impl State {
                                 }
                                 KeyAction::Tap(key) => {
                                     device_manager.emit_key_press(key)?;
-                                    self.virtual_pressed.insert(key);
+                                    device_manager.emit_key_release(key)?;
                                 }
                                 KeyAction::SwitchMode(new_mode) => {
-                                    self.mode = new_mode;
+                                    self.switch_mode(new_mode, device_manager);
                                 }
                                 KeyAction::Release(_) => {}
                             }
@@ -197,10 +213,6 @@ impl State {
                         for action in actions.iter().rev() {
                             match *action {
                                 KeyAction::Release(key) => {
-                                    device_manager.emit_key_release(key)?;
-                                    self.virtual_pressed.remove(&key);
-                                }
-                                KeyAction::Tap(key) => {
                                     device_manager.emit_key_release(key)?;
                                     self.virtual_pressed.remove(&key);
                                 }
@@ -227,9 +239,8 @@ impl State {
             (KeyState::Press, CapsState::Idle) => {
                 if let Some(last_release) = self.last_caps_release {
                     if (now.duration_since(last_release).as_millis() as u64) < DOUBLE_TAP_TIMEOUT_MS {
-                        self.mode = Mode::Normal;
+                        self.switch_mode(Mode::Normal, device_manager);
                         self.caps_state = CapsState::Idle;
-                        debug!("Double tap: entered Normal mode");
                         return Ok(());
                     }
                 }
@@ -257,14 +268,16 @@ impl State {
     }
 
     fn is_emergency_exit(&self, ev: &crate::event::Event) -> bool {
-        if !ev.is_backspace() {
+        if !ev.is_backspace() || ev.key_state != KeyState::Press {
             return false;
         }
-        if ev.key_state != KeyState::Press {
-            return false;
-        }
-        self.physical_pressed.contains(&KEY_LEFTCTRL)
-            && self.physical_pressed.contains(&KEY_LEFTALT)
+
+        let ctrl = self.physical_pressed.contains(&KEY_LEFTCTRL) 
+                || self.physical_pressed.contains(&KEY_RIGHTCTRL);
+        let alt = self.physical_pressed.contains(&KEY_LEFTALT) 
+               || self.physical_pressed.contains(&KEY_RIGHTALT);
+
+        ctrl && alt
     }
 
     fn track_physical_key(&mut self, key: u16, state: KeyState) {

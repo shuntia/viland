@@ -3,7 +3,6 @@ mod errors;
 mod event;
 mod keymap;
 mod state;
-mod uinput;
 
 use device::DeviceManager;
 use errors::VilandError;

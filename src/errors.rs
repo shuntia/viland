@@ -4,8 +4,6 @@ use std::fmt;
 pub enum VilandError {
     Io(std::io::Error),
     DeviceNotFound,
-    DeviceGrabFailed,
-    UinputCreateFailed,
 }
 
 impl fmt::Display for VilandError {
@@ -13,8 +11,6 @@ impl fmt::Display for VilandError {
         match self {
             VilandError::Io(e) => write!(f, "IO error: {}", e),
             VilandError::DeviceNotFound => write!(f, "No suitable input device found"),
-            VilandError::DeviceGrabFailed => write!(f, "Failed to grab device"),
-            VilandError::UinputCreateFailed => write!(f, "Failed to create uinput device"),
         }
     }
 }
