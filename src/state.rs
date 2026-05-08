@@ -5,7 +5,7 @@ use crate::device::DeviceManager;
 use crate::event::{KeyState, KEY_ESC, KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHTCTRL, KEY_RIGHTALT};
 use crate::keymap::{Action, KeyAction, Keymap, Mode};
 use crate::VilandError;
-use tracing::debug;
+use tracing::{debug, info};
 
 const DOUBLE_TAP_TIMEOUT_MS: u64 = 300;
 
