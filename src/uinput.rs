@@ -1,12 +1,13 @@
-use libc::{close, ioctl, write as libc_write, timeval, O_WRONLY, O_NONBLOCK};
+use std::ffi::CString;
+use std::os::unix::io::AsRawFd;
+
+use libc::{close, ioctl, write as libc_write, O_WRONLY, O_NONBLOCK};
 
 use crate::event::{EV_KEY, KeyState};
 use crate::errors::VilandError;
 use tracing::info;
 
 const UINPUT_PATH: &str = "/dev/uinput";
-
-const UINPUT_IOCTL_BASE: u64 = b'U' as u64;
 
 const fn _IO(ty: u64, nr: u64) -> u64 {
     (1 << 31) | ((ty & 0xff) << 8) | (nr & 0xff)
@@ -16,36 +17,14 @@ const fn _IOW(ty: u64, nr: u64, size: u64) -> u64 {
     (1 << 31) | ((ty & 0xff) << 8) | (nr & 0xff) | ((size & 0xfff) << 16)
 }
 
-const UI_DEV_SETUP: u64 = _IOW(UINPUT_IOCTL_BASE, 0, 80);
-const UI_DEV_CREATE: u64 = _IO(UINPUT_IOCTL_BASE, 1);
-const UI_DEV_DESTROY: u64 = _IO(UINPUT_IOCTL_BASE, 2);
+const UI_DEV_SETUP: u64 = _IOW(b'U' as u64, 0, 80);
+const UI_DEV_CREATE: u64 = _IO(b'U' as u64, 1);
+const UI_DEV_DESTROY: u64 = _IO(b'U' as u64, 2);
 
-const UI_SET_EVBIT: u64 = _IOW(UINPUT_IOCTL_BASE, 0x10, 4);
-const UI_SET_KEYBIT: u64 = _IOW(UINPUT_IOCTL_BASE, 0x11, 4);
+const UI_SET_EVBIT: u64 = _IOW(b'U' as u64, 0x10, 4);
+const UI_SET_KEYBIT: u64 = _IOW(b'U' as u64, 0x11, 4);
 
 const BUS_USB: u16 = 0x03;
-
-#[repr(C)]
-struct InputEvent {
-    time: libc::timeval,
-    type_: u16,
-    code: u16,
-    value: i32,
-}
-
-#[repr(C)]
-struct UinputSetup {
-    id: UinputId,
-    name: [u8; 80],
-}
-
-#[repr(C)]
-struct UinputId {
-    bustype: u16,
-    vendor: u16,
-    product: u16,
-    version: u16,
-}
 
 pub struct UinputDevice {
     fd: i32,
@@ -53,11 +32,8 @@ pub struct UinputDevice {
 
 impl UinputDevice {
     pub fn new() -> Result<Self, VilandError> {
-        let c_path = std::ffi::CString::new(UINPUT_PATH)
-            .map_err(|_| VilandError::UinputCreateFailed)?;
-        let fd = unsafe {
-            libc::open(c_path.as_ptr(), O_WRONLY | O_NONBLOCK)
-        };
+        let c_path = CString::new(UINPUT_PATH).map_err(|_| VilandError::UinputCreateFailed)?;
+        let fd = unsafe { libc::open(c_path.as_ptr(), O_WRONLY | O_NONBLOCK) };
         if fd < 0 {
             return Err(VilandError::UinputCreateFailed);
         }
@@ -81,6 +57,20 @@ impl UinputDevice {
         let mut name = [0u8; 80];
         let dev_name = b"Viland Virtual Keyboard\0";
         name[..dev_name.len()].copy_from_slice(dev_name);
+
+        #[repr(C)]
+        struct UinputSetup {
+            id: UinputId,
+            name: [u8; 80],
+        }
+
+        #[repr(C)]
+        struct UinputId {
+            bustype: u16,
+            vendor: u16,
+            product: u16,
+            version: u16,
+        }
 
         let setup = UinputSetup {
             id: UinputId {
@@ -109,8 +99,16 @@ impl UinputDevice {
     }
 
     pub fn emit_key(&mut self, key: u16, state: KeyState) -> Result<(), VilandError> {
+        #[repr(C)]
+        struct InputEvent {
+            time: libc::timeval,
+            type_: u16,
+            code: u16,
+            value: i32,
+        }
+
         let event = InputEvent {
-            time: timeval {
+            time: libc::timeval {
                 tv_sec: 0,
                 tv_usec: 0,
             },
@@ -134,8 +132,16 @@ impl UinputDevice {
     }
 
     pub fn syn(&self) -> Result<(), VilandError> {
+        #[repr(C)]
+        struct InputEvent {
+            time: libc::timeval,
+            type_: u16,
+            code: u16,
+            value: i32,
+        }
+
         let event = InputEvent {
-            time: timeval {
+            time: libc::timeval {
                 tv_sec: 0,
                 tv_usec: 0,
             },
