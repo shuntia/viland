@@ -1,100 +1,206 @@
-# Viland Specification
+# Viland - Vim-like Binding Daemon for Wayland
 
-## Current State: Python Implementation (Issues)
+## Project Overview
 
-### Known Issues
-1. Keys not releasing correctly on shutdown
-2. Poll frequency too low (use selectors instead of select with timeout)
-3. Subprocess per key (ydotool) is slow - should use direct uinput
-4. Modifier detection treats non-modifiers as modifiers
-5. Keys sometimes pass through incorrectly in normal mode
-6. Caps2esc behavior inconsistent
+- **Name**: Viland
+- **Type**: Wayland keyboard input remapping daemon
+- **Language**: Python (current), Rust (planned)
+- **Purpose**: Vim-like keybindings with caps2esc functionality
 
-### Python Todo
+## Current Issues (Python)
 
-- [ ] Fix key release on shutdown - ensure all pressed_keys are emitted as release
-- [ ] Replace selector-based polling with more efficient event-driven approach
-- [ ] Use python-uinput directly instead of ydotool subprocess
-- [ ] Fix modifier detection to only use: leftctrl(29), rightctrl(97), leftshift(42), rightshift(54), leftalt(56), rightalt(100), leftmeta(125), rightmeta(126), capslock(58)
-- [ ] Ensure normal mode fully masks all keys
-- [ ] Ensure insert mode properly passes all keys through via uinput
-- [ ] Fix caps2esc: capslock tap -> escape, hold + key -> ctrl
-- [ ] Fix escape: single tap -> capslock, double tap -> normal mode
-- [ ] Prevent key doubling in insert mode
-- [ ] Add proper cleanup on daemon exit
+1. Keys don't release correctly on daemon exit
+2. Subprocess overhead (ydotool) is slow
+3. Modifier detection incorrect
+4. Key pass-through inconsistent
+5. Caps2esc behavior buggy
 
-## Desired Features
+## SPEC.md and TODO
 
-### Input Handling
-- [ ] Grab devices at startup
-- [ ] Read all key events (EV_KEY) from all keyboards
-- [ ] Track currently pressed keys
-- [ ] Only treat true modifiers as modifiers
+### Architecture
 
-### Modes
+```
+viland/
+├── SPEC.md              # This file
+├── TODO.md               # Detailed task list
+├── pyproject.toml       # Python project config
+├── config/
+│   └── viland.toml      # Default config
+├── src/viland/
+│   ├── __init__.py
+│   ├── config.py        # Config loading
+│   ├── daemon.py       # Main daemon
+│   ├── input_handler.py # evdev input
+│   ├── key_mapper.py   # Key mapping
+│   ├── state_machine.py # Mode state
+│   ├── tray.py         # System tray (optional)
+│   └── filter.py       # Interception filter (legacy)
+├── scripts/
+│   └── viland.sh       # Startup script
+└── install.sh          # Installer
+```
+
+---
+
+## Features Specification
+
+### 1. Input Handling
+
+- [x] Read keyboard events via evdev
+- [x] Grab devices at startup to mask keys
+- [ ] Use direct uinput instead of ydotool subprocess
+- [x] Track pressed keys in set
+- [x] Only treat true modifiers: {29, 97, 42, 54, 56, 100, 125, 126, 58}
+
+### 2. Modes
 
 #### Insert Mode (Default)
-- [ ] All keys pass through to application
-- [ ] Keys re-emitted via uinput (not original device)
-- [ ] caps2esc: tap capslock -> escape, hold + key -> ctrl+key
-- [ ] escape tap -> capslock (enable caps), double-tap -> normal mode
-- [ ] capslock double-tap -> normal mode
+- [x] Keys pass through (re-emitted via ydotool)
+- [ ] Fix key release on shutdown
+- [ ] Ensure no key doubling
+- [x] caps2esc: capslock tap → escape, hold + key → ctrl+key
 
-#### Normal Mode
-- [ ] All keys masked (not passed through)
-- [ ] h/j/k/l -> arrow keys
-- [ ] w/b/e -> word navigation
-- [ ] i/a -> exit to insert mode
-- [ ] ; or / -> command mode (wofi)
-- [ ] esc -> nothing (don't exit to insert)
+#### Normal Mode (Activated via double-tap caps/esc)
+- [x] All keys masked (consumed, not passed through)
+- [x] h/j/k/l → arrow keys
+- [x] w/b/e → word forward/back/end
+- [x] i/a → exit to insert mode
+- [x] ; or / → command mode
+- [x] esc → don't exit (use i/a instead)
 
-### Command Mode
-- [ ] Triggered by ; or / in normal mode
-- [ ] Opens wofi/fuzzel with ":" prompt
-- [ ] Commands: q, qa, d, w, x, c, tab, tn, tp, h, e, r, y, p, s, z, m
-- [ ] 5 second timeout
+### 3. Command Mode
 
-### System Integration
-- [ ] PID file at ~/.config/viland/viland.pid
-- [ ] Log file at ~/.config/viland/viland.log
-- [ ] Prevent multiple instances
-- [ ] Ctrl+Alt+Q to exit daemon
-- [ ] System tray (optional, disabled by default)
-- [ ] Config file at ~/.config/viland/config.toml
+- [x] Triggered by ; or / in normal mode
+- [x] Opens wofi/fuzzel with ":" prompt
+- [x] 5 second timeout
+- [x] Commands: q, qa, d, w, x, c, tab, tn, tp, h, e, r, y, p, s, z, m
 
-### Rust Implementation (Future)
+### 4. System Integration
 
-#### Architecture
-- [ ] Use tokio for async runtime
-- [ ] Parallel device polling with tokio::select!
-- [ ] Direct uinput for key injection (no subprocess)
-- [ ] Event-driven key processing
+- [x] PID file at ~/.config/viland/viland.pid
+- [x] Prevent multiple instances
+- [x] Ctrl+Alt+Q to exit daemon
+- [x] Config file at ~/.config/viland/config.toml
+- [x] Notification on mode change
+- [ ] Log file at ~/.config/viland/viland.log (partially working)
+- [ ] System tray (doesn't work on Wayland without tray manager)
 
-#### Performance Targets
-- < 1ms latency per key
-- Batch key processing
-- True parallel device reading
-- No subprocess overhead
+---
 
-#### Structure
+## Rust Implementation Plan
+
+### Why Rust?
+
+- Sub-millisecond latency (vs 10-50ms in Python)
+- Direct uinput (no subprocess)
+- True async parallel device polling
+- No GIL
+
+### Architecture
+
 ```
 src/
-├── main.rs          - Entry point, CLI args
-├── config.rs        - Config loading
-├── devices.rs       - Input device management
-├── state.rs         - Mode state machine
-├── keymap.rs        - Key mapping logic
-├── command.rs      - Command mode with wofi
-├── uinput.rs        - Direct uinput injection
-└── lib.rs           - Library exports
+├── main.rs          # Entry point, CLI
+├── config.rs        # Config loading (serde)
+├── devices.rs       # evdev device management
+├── state.rs         # Mode state machine
+├── keymap.rs        # Key mapping logic
+├── command.rs       # Command mode (wofi)
+├── uinput.rs        # Direct uinput injection
+└── lib.rs           # Library exports
 ```
 
-#### Features (Same as Python)
-- [ ] All mode functionality
-- [ ] All key bindings
-- [ ] Command mode
-- [ ] caps2esc
-- [ ] Config file
-- [ ] Logging
-- [ ] PID file
-- [ ] Multiple instance prevention
+### Async Architecture
+
+```rust
+use tokio::select;
+use std::collections::HashSet;
+
+// Parallel device polling
+async fn poll_devices() {
+    loop {
+        select! {
+            event = device1.read_async() => handle(event),
+            event = device2.read_async() => handle(event),
+            _ = tokio::time::sleep(Duration::from_millis(1)) => continue,
+        }
+    }
+}
+
+// Direct uinput injection
+fn emit_key(code: u16, pressed: bool) {
+    device.emit(EV_KEY, code, pressed as i32);
+    device.syn();
+}
+```
+
+---
+
+## Key Mappings
+
+### Normal Mode
+| Key | Action |
+|-----|--------|
+| h | left |
+| j | down |
+| k | up |
+| l | right |
+| w | ctrl+right (word forward) |
+| b | ctrl+left (word back) |
+| e | end (word end) |
+| i | exit to insert |
+| a | exit to insert + move right |
+| ; | command mode |
+| / | command mode |
+
+### Command Mode (wofi)
+| Command | Action |
+|---------|--------|
+| q | Alt+F4 (close) |
+| qa | Ctrl+Q (quit all) |
+| d | backspace (delete char) |
+| w | Ctrl+S (save) |
+| x | save + quit |
+| c | close |
+| tab | Ctrl+T (new tab) |
+| tn | Ctrl+Tab (next tab) |
+| tp | Ctrl+Shift+Tab (prev tab) |
+| h | help |
+
+---
+
+## TODO List
+
+### Python (Current - Fix Priority)
+
+1. **HIGH**: Fix key release on shutdown - emit release for all pressed_keys
+2. **HIGH**: Fix caps2esc: capslock tap → escape, hold+key → ctrl+key
+3. **HIGH**: Fix escape: single tap → pass through, double tap → normal mode
+4. **MEDIUM**: Use direct uinput instead of ydotool subprocess
+5. **MEDIUM**: Fix modifier detection to only use true modifiers
+6. **LOW**: Add proper logging to file
+7. **LOW**: Test all command mode commands
+
+### Rust (Future - Implementation)
+
+1. Create Rust project with tokio
+2. Implement async device polling
+3. Implement direct uinput injection
+4. Migrate all key mappings
+5. Implement command mode
+6. Test latency and performance
+
+---
+
+## Testing Checklist
+
+- [ ] Double-tap caps → enter normal mode
+- [ ] Double-tap escape → enter normal mode
+- [ ] Single tap caps → escape (in insert mode)
+- [ ] Single tap escape → pass through (in insert mode)
+- [ ] h/j/k/l → arrows (in normal mode)
+- [ ] i/a → exit to insert mode (in normal mode)
+- [ ] ; → command mode (in normal mode)
+- [ ] Ctrl+Alt+Q → exit daemon
+- [ ] Keys release properly on daemon exit
+- [ ] No key doubling in insert mode
