@@ -8,9 +8,12 @@ mod uinput;
 use device::DeviceManager;
 use errors::VilandError;
 use state::State;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::{error, info, warn};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+static SHOULD_EXIT: AtomicBool = AtomicBool::new(false);
 
 fn setup_logging() {
     let log_dir = std::env::var("XDG_DATA_HOME")
@@ -35,10 +38,30 @@ fn setup_logging() {
     Box::leak(Box::new(_guard));
 }
 
+unsafe fn setup_signal_handlers() {
+    use std::mem::zeroed;
+
+    let mut sigint_action: libc::sigaction = zeroed();
+    sigint_action.sa_sigaction = signal_handler as usize;
+    libc::sigaction(libc::SIGINT, &sigint_action, std::ptr::null_mut());
+
+    let mut sigterm_action: libc::sigaction = zeroed();
+    sigterm_action.sa_sigaction = signal_handler as usize;
+    libc::sigaction(libc::SIGTERM, &sigterm_action, std::ptr::null_mut());
+}
+
+extern "C" fn signal_handler(_signum: i32) {
+    SHOULD_EXIT.store(true, Ordering::SeqCst);
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     setup_logging();
 
     info!("Viland starting...");
+
+    unsafe {
+        setup_signal_handlers();
+    }
 
     let mut state = State::new();
     let mut device_manager = DeviceManager::new()?;
@@ -51,6 +74,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Viland initialized, entering main loop");
 
     loop {
+        if SHOULD_EXIT.load(Ordering::SeqCst) {
+            info!("Received signal, shutting down gracefully");
+            state.release_all_virtual(&mut device_manager);
+            device_manager.ungrab_all();
+            return Ok(());
+        }
+
         match device_manager.poll_events() {
             Ok(events) => {
                 for ev in events {

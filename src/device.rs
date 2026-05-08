@@ -4,15 +4,23 @@ use std::mem::MaybeUninit;
 use std::os::unix::io::RawFd;
 use std::path::PathBuf;
 
-use libc::{close, ioctl, read, O_RDWR};
+use libc::{close, ioctl, read, O_RDWR, O_RDONLY, O_NONBLOCK};
 
 use crate::event::{Event, EV_KEY, KeyState};
 use crate::errors::VilandError;
 use crate::uinput::UinputDevice;
-use tracing::info;
+use tracing::{info, warn};
 
 const EVIOCGRAB: u64 = 0x40044590;
 const OUR_VENDOR: u16 = 0x1234;
+
+const IN_ACCESS: u32 = 0x00000001;
+const IN_MODIFY: u32 = 0x00000002;
+const IN_CREATE: u32 = 0x00000100;
+const IN_DELETE: u32 = 0x00000200;
+
+const INOTIFY_ADD_WATCH: u64 = 1;
+const INOTIFY_RM_WATCH: u64 = 2;
 
 const IOC_NRBITS: u64 = 8;
 const IOC_TYPEBITS: u64 = 8;
@@ -62,6 +70,7 @@ pub struct DeviceManager {
     fd_to_id: HashMap<RawFd, u32>,
     uinput: Option<UinputDevice>,
     epoll_fd: RawFd,
+    inotify_fd: RawFd,
     grabbed_fds: Vec<RawFd>,
 }
 
@@ -72,10 +81,17 @@ impl DeviceManager {
             if epoll_fd < 0 {
                 return Err(VilandError::Io(std::io::Error::last_os_error()));
             }
+
+            let inotify_fd = libc::inotify_init1(O_NONBLOCK);
+            if inotify_fd < 0 {
+                return Err(VilandError::Io(std::io::Error::last_os_error()));
+            }
+
             Ok(Self {
                 fd_to_id: HashMap::new(),
                 uinput: None,
                 epoll_fd,
+                inotify_fd,
                 grabbed_fds: Vec::new(),
             })
         }
@@ -128,6 +144,83 @@ impl DeviceManager {
             }
         }
         info!("uinput device created");
+
+        let c_path = std::ffi::CString::new("/dev/input")
+            .map_err(|_| VilandError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "path contains null byte",
+            )))?;
+        unsafe {
+            let wd = libc::inotify_add_watch(self.inotify_fd, c_path.as_ptr(), IN_CREATE | IN_DELETE);
+            if wd < 0 {
+                warn!("Failed to add inotify watch: {}", std::io::Error::last_os_error());
+            }
+        }
+
+        self.add_inotify_to_epoll()?;
+
+        Ok(())
+    }
+
+    fn add_inotify_to_epoll(&self) -> Result<(), VilandError> {
+        let mut event = libc::epoll_event {
+            u64: self.inotify_fd as u64,
+            events: (libc::EPOLLIN | libc::EPOLLHUP | libc::EPOLLERR) as u32,
+        };
+        unsafe {
+            if libc::epoll_ctl(self.epoll_fd, libc::EPOLL_CTL_ADD, self.inotify_fd, &mut event) != 0 {
+                return Err(VilandError::Io(std::io::Error::last_os_error()));
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_inotify_event(&mut self) -> Result<(), VilandError> {
+        let mut buffer = [0u8; 1024];
+        let size = unsafe { read(self.inotify_fd, buffer.as_mut_ptr() as *mut _, 1024) };
+        if size <= 0 {
+            return Ok(());
+        }
+
+        let mut offset = 0;
+        while offset < size as usize {
+            let event_ptr = unsafe { buffer.as_ptr().add(offset) as *const libc::inotify_event };
+            let event = unsafe { &*event_ptr };
+
+            if event.len > 0 {
+                let name_offset = offset + std::mem::size_of::<libc::inotify_event>();
+                let name_ptr = unsafe { buffer.as_ptr().add(name_offset) };
+                let name = unsafe {
+                    std::str::from_utf8(std::slice::from_raw_parts(name_ptr, event.len as usize))
+                };
+
+                if let Ok(name) = name {
+                    if name.starts_with("event") {
+                        if event.mask & IN_CREATE != 0 {
+                            info!("New device created: {}", name);
+                            let path = PathBuf::from("/dev/input").join(name);
+                            if let Ok(fd) = self.try_open_device(&path) {
+                                if self.is_keyboard(fd) {
+                                    if self.grab_device(fd).is_ok() {
+                                        let id = self.get_device_id(fd);
+                                        self.fd_to_id.insert(fd, id);
+                                        self.grabbed_fds.push(fd);
+                                        self.add_to_epoll(fd)?;
+                                        info!("Grabbed new keyboard: {} (fd={})", name, fd);
+                                    }
+                                } else {
+                                    unsafe { close(fd); }
+                                }
+                            }
+                        } else if event.mask & IN_DELETE != 0 {
+                            info!("Device removed: {}", name);
+                        }
+                    }
+                }
+            }
+
+            offset += (std::mem::size_of::<libc::inotify_event>() + event.len as usize) as usize;
+        }
 
         Ok(())
     }
@@ -183,8 +276,15 @@ impl DeviceManager {
 
         let has_a = key_bits[(crate::event::KEY_A as usize) / 8] & (1 << (crate::event::KEY_A % 8)) != 0;
         let has_z = key_bits[(crate::event::KEY_Z as usize) / 8] & (1 << (crate::event::KEY_Z % 8)) != 0;
+        let has_enter = key_bits[(crate::event::KEY_ENTER as usize) / 8] & (1 << (crate::event::KEY_ENTER % 8)) != 0;
+        let has_space = key_bits[(crate::event::KEY_SPACE as usize) / 8] & (1 << (crate::event::KEY_SPACE % 8)) != 0;
 
-        has_a && has_z
+        let alpha_count = (0..26).filter(|i| {
+            let key = crate::event::KEY_A + *i;
+            key_bits[(key as usize) / 8] & (1 << (key % 8)) != 0
+        }).count();
+
+        has_a && has_z && has_enter && has_space && alpha_count >= 10
     }
 
     fn grab_device(&self, fd: RawFd) -> Result<(), VilandError> {
@@ -283,6 +383,11 @@ impl DeviceManager {
                 continue;
             }
 
+            if fd == self.inotify_fd {
+                self.handle_inotify_event()?;
+                continue;
+            }
+
             loop {
                 let mut event = MaybeUninit::<InputEvent>::uninit();
                 let size = unsafe {
@@ -361,6 +466,9 @@ impl Drop for DeviceManager {
         self.ungrab_all();
         for fd in self.grabbed_fds.drain(..) {
             unsafe { close(fd); }
+        }
+        if self.inotify_fd >= 0 {
+            unsafe { close(self.inotify_fd) };
         }
         if self.epoll_fd >= 0 {
             unsafe { close(self.epoll_fd) };
