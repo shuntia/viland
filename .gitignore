@@ -1,0 +1,6 @@
+/target
+/out.txt
+*.swp
+*.swo
+*~
+.DS_Store

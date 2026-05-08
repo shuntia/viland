@@ -1,0 +1,74 @@
+mod device;
+mod errors;
+mod event;
+mod keymap;
+mod state;
+mod uinput;
+
+use device::DeviceManager;
+use errors::VilandError;
+use state::State;
+use tracing::{error, info, warn};
+use tracing_appender::rolling::{RollingFileAppender, Rotation};
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+fn setup_logging() {
+    let log_dir = std::env::var("XDG_DATA_HOME")
+        .map(|p| std::path::PathBuf::from(p).join("viland").join("logs"))
+        .unwrap_or_else(|_| {
+            std::env::var("HOME")
+                .map(|p| std::path::PathBuf::from(p).join(".local").join("share").join("viland").join("logs"))
+                .unwrap_or_else(|_| std::path::PathBuf::from("/tmp/viland/logs"))
+        });
+
+    std::fs::create_dir_all(&log_dir).ok();
+
+    let file_appender = RollingFileAppender::new(Rotation::DAILY, &log_dir, "viland.log");
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+
+    tracing_subscriber::registry()
+        .with(EnvFilter::new("info"))
+        .with(fmt::layer().with_writer(non_blocking).with_ansi(false))
+        .with(fmt::layer().with_writer(std::io::stdout))
+        .init();
+
+    Box::leak(Box::new(_guard));
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    setup_logging();
+
+    info!("Viland starting...");
+
+    let mut state = State::new();
+    let mut device_manager = DeviceManager::new()?;
+
+    if let Err(e) = device_manager.init() {
+        error!("Failed to initialize devices: {}", e);
+        return Err(e.into());
+    }
+
+    info!("Viland initialized, entering main loop");
+
+    loop {
+        match device_manager.poll_events() {
+            Ok(events) => {
+                for ev in events {
+                    if let Err(e) = state.process_event(ev, &mut device_manager) {
+                        warn!("Error processing event: {}", e);
+                    }
+
+                    if state.should_exit() {
+                        info!("Emergency exit triggered");
+                        state.release_all_virtual(&mut device_manager);
+                        device_manager.ungrab_all();
+                        return Ok(());
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Poll error: {}", e);
+            }
+        }
+    }
+}
