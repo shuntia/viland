@@ -1,4 +1,4 @@
-use crate::event::{KEY_LEFTCTRL, KEY_LEFT, KEY_RIGHT, KEY_DOWN, KEY_UP};
+use crate::event::{KEY_LEFTCTRL, KEY_LEFT, KEY_RIGHT, KEY_DOWN, KEY_UP, KEY_LEFTMETA};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -51,8 +51,46 @@ impl Keymap {
         normal_mode_keys.insert(crate::event::KEY_K, Action::Emit(KEY_UP));
         normal_mode_keys.insert(crate::event::KEY_L, Action::Emit(KEY_RIGHT));
 
-        normal_mode_keys.insert(crate::event::KEY_0, Action::Emit(crate::event::KEY_HOME));
-        normal_mode_keys.insert(crate::event::KEY_4, Action::Emit(crate::event::KEY_END));
+        normal_mode_keys.insert(crate::event::KEY_1, Action::EmitChord(vec![
+            KeyAction::Press(KEY_LEFTMETA),
+            KeyAction::Tap(crate::event::KEY_1),
+        ]));
+        normal_mode_keys.insert(crate::event::KEY_2, Action::EmitChord(vec![
+            KeyAction::Press(KEY_LEFTMETA),
+            KeyAction::Tap(crate::event::KEY_2),
+        ]));
+        normal_mode_keys.insert(crate::event::KEY_3, Action::EmitChord(vec![
+            KeyAction::Press(KEY_LEFTMETA),
+            KeyAction::Tap(crate::event::KEY_3),
+        ]));
+        normal_mode_keys.insert(crate::event::KEY_4, Action::EmitChord(vec![
+            KeyAction::Press(KEY_LEFTMETA),
+            KeyAction::Tap(crate::event::KEY_4),
+        ]));
+        normal_mode_keys.insert(crate::event::KEY_5, Action::EmitChord(vec![
+            KeyAction::Press(KEY_LEFTMETA),
+            KeyAction::Tap(crate::event::KEY_5),
+        ]));
+        normal_mode_keys.insert(crate::event::KEY_6, Action::EmitChord(vec![
+            KeyAction::Press(KEY_LEFTMETA),
+            KeyAction::Tap(crate::event::KEY_6),
+        ]));
+        normal_mode_keys.insert(crate::event::KEY_7, Action::EmitChord(vec![
+            KeyAction::Press(KEY_LEFTMETA),
+            KeyAction::Tap(crate::event::KEY_7),
+        ]));
+        normal_mode_keys.insert(crate::event::KEY_8, Action::EmitChord(vec![
+            KeyAction::Press(KEY_LEFTMETA),
+            KeyAction::Tap(crate::event::KEY_8),
+        ]));
+        normal_mode_keys.insert(crate::event::KEY_9, Action::EmitChord(vec![
+            KeyAction::Press(KEY_LEFTMETA),
+            KeyAction::Tap(crate::event::KEY_9),
+        ]));
+        normal_mode_keys.insert(crate::event::KEY_0, Action::EmitChord(vec![
+            KeyAction::Press(KEY_LEFTMETA),
+            KeyAction::Tap(crate::event::KEY_0),
+        ]));
 
         Self { normal_mode_keys }
     }

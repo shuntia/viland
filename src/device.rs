@@ -84,6 +84,8 @@ impl DeviceManager {
                         return;
                     }
 
+                    self.release_stuck_keys(&mut device);
+
                     let fd = device.as_raw_fd();
                     let id = self.get_device_id(&device);
 
@@ -104,6 +106,18 @@ impl DeviceManager {
             Err(e) => {
                 if e.kind() != std::io::ErrorKind::PermissionDenied {
                     warn!("Failed to open device {}: {}", path.display(), e);
+                }
+            }
+        }
+    }
+
+    fn release_stuck_keys(&mut self, device: &mut Device) {
+        if let Some(uinput) = &mut self.uinput {
+            if let Ok(key_states) = device.get_key_state() {
+                for key in key_states.iter() {
+                    let ev = InputEvent::new(EventType::KEY.0, key.0, 0);
+                    let _ = uinput.emit(&[ev]);
+                    info!("Released stuck key: {}", key.0);
                 }
             }
         }

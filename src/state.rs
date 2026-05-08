@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::time::Instant;
 
 use crate::device::DeviceManager;
-use crate::event::{KeyState, KEY_ESC, KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHTCTRL, KEY_RIGHTALT};
+use crate::event::{KeyState, KEY_ESC, KEY_LEFTCTRL, KEY_LEFTALT, KEY_RIGHTCTRL, KEY_RIGHTALT, KEY_LEFTSHIFT, KEY_RIGHTSHIFT, KEY_HOME, KEY_END};
 use crate::keymap::{Action, KeyAction, Keymap, Mode};
 use crate::VilandError;
 use tracing::{debug, info};
@@ -30,7 +30,7 @@ pub struct State {
 impl State {
     pub fn new() -> Self {
         Self {
-            mode: Mode::Insert,
+            mode: Mode::Normal,
             keymap: Keymap::new(),
             caps_state: CapsState::Idle,
             last_caps_press: None,
@@ -136,7 +136,15 @@ impl State {
             return Ok(());
         }
 
-        let action = self.keymap.get_action(ev.key_code, self.mode);
+        let mut action = self.keymap.get_action(ev.key_code, self.mode);
+
+        if (ev.key_code == crate::event::KEY_4 || ev.key_code == crate::event::KEY_6) && self.is_shift_pressed() {
+            action = if ev.key_code == crate::event::KEY_4 {
+                Action::Emit(KEY_END)
+            } else {
+                Action::Emit(KEY_HOME)
+            };
+        }
 
         match action {
             Action::PassThrough => {
@@ -173,7 +181,12 @@ impl State {
                                 KeyAction::SwitchMode(new_mode) => {
                                     self.switch_mode(new_mode, device_manager);
                                 }
-                                KeyAction::Tap(_) => {}
+                                KeyAction::Tap(key) => {
+                                    device_manager.emit_key_press(key)?;
+                                    self.virtual_pressed.insert(key);
+                                    device_manager.emit_key_release(key)?;
+                                    self.virtual_pressed.remove(&key);
+                                }
                             }
                         }
                     }
@@ -279,6 +292,11 @@ impl State {
                || self.physical_pressed.contains(&KEY_RIGHTALT);
 
         ctrl && alt
+    }
+
+    fn is_shift_pressed(&self) -> bool {
+        self.physical_pressed.contains(&KEY_LEFTSHIFT) 
+            || self.physical_pressed.contains(&KEY_RIGHTSHIFT)
     }
 
     fn track_physical_key(&mut self, key: u16, state: KeyState) {

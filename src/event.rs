@@ -5,6 +5,9 @@ pub const KEY_BACKSPACE: u16 = 14;
 
 pub const KEY_LEFTCTRL: u16 = 29;
 pub const KEY_LEFTALT: u16 = 56;
+pub const KEY_LEFTMETA: u16 = 125;
+pub const KEY_LEFTSHIFT: u16 = 42;
+pub const KEY_RIGHTSHIFT: u16 = 54;
 pub const KEY_RIGHTCTRL: u16 = 97;
 pub const KEY_RIGHTALT: u16 = 100;
 
@@ -27,8 +30,16 @@ pub const KEY_K: u16 = 37;
 pub const KEY_L: u16 = 38;
 pub const KEY_W: u16 = 17;
 
-pub const KEY_0: u16 = 11;
+pub const KEY_1: u16 = 2;
+pub const KEY_2: u16 = 3;
+pub const KEY_3: u16 = 4;
 pub const KEY_4: u16 = 5;
+pub const KEY_5: u16 = 6;
+pub const KEY_6: u16 = 7;
+pub const KEY_7: u16 = 8;
+pub const KEY_8: u16 = 9;
+pub const KEY_9: u16 = 10;
+pub const KEY_0: u16 = 11;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyState {
