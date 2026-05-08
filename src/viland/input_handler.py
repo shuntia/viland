@@ -1,17 +1,17 @@
 import evdev
 from typing import List, Optional
-import select
+import selectors
 import logging
-import time
 
 logger = logging.getLogger(__name__)
 
 
 class InputHandler:
     def __init__(self):
-        self.devices: List[evdev.InputDevice] = []
         self.keyboard_devices: List[evdev.InputDevice] = []
+        self.selector = selectors.DefaultSelector()
         self._discover_keyboards()
+        self._setup_selector()
 
     def _discover_keyboards(self):
         all_devices = [evdev.InputDevice(path) for path in evdev.list_devices()]
@@ -28,28 +28,47 @@ class InputHandler:
             except Exception as e:
                 logger.warning(f"Error checking device {device.path}: {e}")
 
+    def _setup_selector(self):
+        for device in self.keyboard_devices:
+            self.selector.register(device.fd, selectors.EVENT_READ, device)
+
     def get_keyboard_fds(self) -> List[int]:
         return [d.fd for d in self.keyboard_devices]
 
-    def read_event(self, timeout: float = 0.1) -> Optional[evdev.InputEvent]:
-        fds = self.get_keyboard_fds()
-        if not fds:
-            return None
-
+    def read_event(self, timeout: float = 0.01) -> Optional[evdev.InputEvent]:
         try:
-            r, _, _ = select.select(fds, [], [], timeout)
-        except Exception as e:
-            logger.warning(f"Select error: {e}")
-            return None
+            events = self.selector.select(timeout=timeout)
+            if not events:
+                return None
 
-        for fd in r:
-            for device in self.keyboard_devices:
-                if device.fd == fd:
-                    try:
-                        for event in device.read():
+            for key, _ in events:
+                device = key.data
+                try:
+                    for event in device.read():
+                        if event.type == evdev.ecodes.EV_KEY:
                             return event
-                    except BlockingIOError:
-                        continue
-                    except Exception as e:
-                        logger.debug(f"Read error from {device.name}: {e}")
+                except BlockingIOError:
+                    continue
+                except Exception as e:
+                    logger.debug(f"Read error from {device.name}: {e}")
+        except Exception as e:
+            logger.warning(f"Selector error: {e}")
         return None
+
+    def grab_all_devices(self):
+        for device in self.keyboard_devices:
+            try:
+                device.grab()
+                logger.info(f"Grabbed device: {device.name}")
+            except OSError as e:
+                logger.error(f"Failed to grab {device.name}: {e}")
+            except Exception as e:
+                logger.error(f"Error grabbing {device.name}: {e}")
+
+    def ungrab_all_devices(self):
+        for device in self.keyboard_devices:
+            try:
+                device.ungrab()
+                logger.info(f"Ungrabbed device: {device.name}")
+            except Exception as e:
+                logger.error(f"Error ungrabbing {device.name}: {e}")

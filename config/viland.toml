@@ -29,19 +29,24 @@ zero = "home"
 dollar = "end"
 g = "home"
 
-# Exit to insert
-i = "escape"
-a = "escape-right"
+# Exit to insert (special - handled in code)
+i = "exit-insert"
+a = "exit-insert-right"
+
+# New line
 o = "end-enter-up"
-s = "backspace"
-escape = "escape"
 
 # Delete char
+s = "backspace"
 x = "backspace"
 
 # Search
 slash = "C-f"
 n = "right"
+
+# Command mode (press ; or :)
+colon = "command"
+semicolon = "command"
 
 # Undo/redo
 u = "C-z"
@@ -49,3 +54,7 @@ r = "C-y"
 
 # Paste
 p = "C-v"
+
+# Escape
+escape = "escape"
+tab = "tab"
