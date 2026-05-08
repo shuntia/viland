@@ -1,0 +1,43 @@
+use std::collections::HashMap;
+use std::fs;
+use std::mem::MaybeUninit;
+use std::os::unix::io::RawFd;
+use std::path::PathBuf;
+
+use libc::{close, ioctl, read, O_RDWR, O_NONBLOCK};
+
+use crate::event::{Event, EV_KEY, KeyState};
+use crate::errors::VilandError;
+use crate::uinput::UinputDevice;
+use tracing::{info, warn};
+
+const EVIOCGRAB: u64 = 0x40044590;
+const OUR_VENDOR: u16 = 0x1234;
+
+const IN_CREATE: u32 = 0x00000100;
+const IN_DELETE: u32 = 0x00000200;
+
+const IOC_NRBITS: u64 = 8;
+const IOC_TYPEBITS: u64 = 8;
+const IOC_SIZEBITS: u64 = 14;
+
+const IOC_NRSHIFT: u64 = 0;
+const IOC_TYPESHIFT: u64 = IOC_NRSHIFT + IOC_NRBITS;
+const IOC_SIZESHIFT: u64 = IOC_TYPESHIFT + IOC_TYPEBITS;
+const IOC_DIRSHIFT: u64 = IOC_SIZESHIFT + IOC_SIZEBITS;
+
+const IOC_READ: u64 = 2;
+
+const fn ioc(dir: u64, ty: u64, nr: u64, size: u64) -> u64 {
+    (dir << IOC_DIRSHIFT) | (ty << IOC_TYPESHIFT) | (nr << IOC_NRSHIFT) | (size << IOC_SIZESHIFT)
+}
+
+const fn ior(ty: u64, nr: u64, size: u64) -> u64 {
+    ioc(IOC_READ, ty, nr, size)
+}
+
+const fn eviocgbit(ev: u64, len: u64) -> u64 {
+    ior(b'E' as u64, 0x20 + ev, len)
+}
+
+const EVIOCGID: u64 = ior(b'E' as u64, 0x02, 8);

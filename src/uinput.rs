@@ -1,5 +1,4 @@
 use std::ffi::CString;
-use std::os::unix::io::AsRawFd;
 
 use libc::{close, ioctl, write as libc_write, O_WRONLY, O_NONBLOCK};
 

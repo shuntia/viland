@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::time::Instant;
 
 use crate::device::DeviceManager;
-use crate::event::{KeyState, KEY_ESC, KEY_LEFTCTRL, KEY_LEFTALT, KEY_BACKSPACE};
+use crate::event::{KeyState, KEY_ESC, KEY_LEFTCTRL, KEY_LEFTALT};
 use crate::keymap::{Action, KeyAction, Keymap, Mode};
 use crate::VilandError;
 use tracing::debug;
@@ -119,7 +119,9 @@ impl State {
         let action = self.keymap.get_action(ev.key_code, self.mode);
 
         match action {
-            Action::PassThrough => unreachable!(),
+            Action::PassThrough => {
+                tracing::warn!("PassThrough action in Normal mode for key {}, ignoring", ev.key_code);
+            }
             Action::Ignore => {}
             Action::SwitchMode(new_mode) => {
                 self.mode = new_mode;
@@ -144,9 +146,15 @@ impl State {
                 match ev.key_state {
                     KeyState::Press => {
                         for action in actions {
-                            if let KeyAction::Press(key) = action {
-                                device_manager.emit_key_press(key)?;
-                                self.virtual_pressed.insert(key);
+                            match action {
+                                KeyAction::Press(key) => {
+                                    device_manager.emit_key_press(key)?;
+                                    self.virtual_pressed.insert(key);
+                                }
+                                KeyAction::SwitchMode(new_mode) => {
+                                    self.mode = new_mode;
+                                }
+                                _ => {}
                             }
                         }
                     }
@@ -159,8 +167,8 @@ impl State {
                         }
                     }
                     KeyState::Repeat => {
-                        if let Some(&KeyAction::Press(last_key)) = actions.last() {
-                            device_manager.emit_key(last_key, KeyState::Repeat)?;
+                        if let Some(&KeyAction::Press(key)) = actions.iter().rev().find(|a| matches!(a, KeyAction::Press(_))) {
+                            device_manager.emit_key(key, KeyState::Repeat)?;
                         }
                     }
                 }
@@ -178,6 +186,9 @@ impl State {
                                     device_manager.emit_key_press(key)?;
                                     self.virtual_pressed.insert(key);
                                 }
+                                KeyAction::SwitchMode(new_mode) => {
+                                    self.mode = new_mode;
+                                }
                                 KeyAction::Release(_) => {}
                             }
                         }
@@ -193,7 +204,7 @@ impl State {
                                     device_manager.emit_key_release(key)?;
                                     self.virtual_pressed.remove(&key);
                                 }
-                                KeyAction::Press(_) => {}
+                                _ => {}
                             }
                         }
                     }

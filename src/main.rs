@@ -42,11 +42,11 @@ unsafe fn setup_signal_handlers() {
     use std::mem::zeroed;
 
     let mut sigint_action: libc::sigaction = zeroed();
-    sigint_action.sa_sigaction = signal_handler as usize;
+    sigint_action.sa_sigaction = signal_handler as *const () as usize;
     libc::sigaction(libc::SIGINT, &sigint_action, std::ptr::null_mut());
 
     let mut sigterm_action: libc::sigaction = zeroed();
-    sigterm_action.sa_sigaction = signal_handler as usize;
+    sigterm_action.sa_sigaction = signal_handler as *const () as usize;
     libc::sigaction(libc::SIGTERM, &sigterm_action, std::ptr::null_mut());
 }
 

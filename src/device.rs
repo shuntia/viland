@@ -4,7 +4,7 @@ use std::mem::MaybeUninit;
 use std::os::unix::io::RawFd;
 use std::path::PathBuf;
 
-use libc::{close, ioctl, read, O_RDWR, O_RDONLY, O_NONBLOCK};
+use libc::{close, ioctl, read, O_RDWR, O_NONBLOCK};
 
 use crate::event::{Event, EV_KEY, KeyState};
 use crate::errors::VilandError;
@@ -14,26 +14,18 @@ use tracing::{info, warn};
 const EVIOCGRAB: u64 = 0x40044590;
 const OUR_VENDOR: u16 = 0x1234;
 
-const IN_ACCESS: u32 = 0x00000001;
-const IN_MODIFY: u32 = 0x00000002;
 const IN_CREATE: u32 = 0x00000100;
 const IN_DELETE: u32 = 0x00000200;
-
-const INOTIFY_ADD_WATCH: u64 = 1;
-const INOTIFY_RM_WATCH: u64 = 2;
 
 const IOC_NRBITS: u64 = 8;
 const IOC_TYPEBITS: u64 = 8;
 const IOC_SIZEBITS: u64 = 14;
-const IOC_DIRBITS: u64 = 2;
 
 const IOC_NRSHIFT: u64 = 0;
 const IOC_TYPESHIFT: u64 = IOC_NRSHIFT + IOC_NRBITS;
 const IOC_SIZESHIFT: u64 = IOC_TYPESHIFT + IOC_TYPEBITS;
 const IOC_DIRSHIFT: u64 = IOC_SIZESHIFT + IOC_SIZEBITS;
 
-const IOC_NONE: u64 = 0;
-const IOC_WRITE: u64 = 1;
 const IOC_READ: u64 = 2;
 
 const fn ioc(dir: u64, ty: u64, nr: u64, size: u64) -> u64 {
@@ -190,15 +182,12 @@ impl DeviceManager {
             if event.len > 0 {
                 let name_offset = offset + std::mem::size_of::<libc::inotify_event>();
                 let name_ptr = unsafe { buffer.as_ptr().add(name_offset) };
-                let name = unsafe {
-                    std::str::from_utf8(std::slice::from_raw_parts(name_ptr, event.len as usize))
-                };
 
-                if let Ok(name) = name {
-                    if name.starts_with("event") {
+                if let Ok(name_cstr) = unsafe { std::ffi::CStr::from_ptr(name_ptr as *const libc::c_char).to_str() } {
+                    if name_cstr.starts_with("event") {
                         if event.mask & IN_CREATE != 0 {
-                            info!("New device created: {}", name);
-                            let path = PathBuf::from("/dev/input").join(name);
+                            info!("New device created: {}", name_cstr);
+                            let path = PathBuf::from("/dev/input").join(name_cstr);
                             if let Ok(fd) = self.try_open_device(&path) {
                                 if self.is_keyboard(fd) {
                                     if self.grab_device(fd).is_ok() {
@@ -206,14 +195,14 @@ impl DeviceManager {
                                         self.fd_to_id.insert(fd, id);
                                         self.grabbed_fds.push(fd);
                                         self.add_to_epoll(fd)?;
-                                        info!("Grabbed new keyboard: {} (fd={})", name, fd);
+                                        info!("Grabbed new keyboard: {} (fd={})", name_cstr, fd);
                                     }
                                 } else {
                                     unsafe { close(fd); }
                                 }
                             }
                         } else if event.mask & IN_DELETE != 0 {
-                            info!("Device removed: {}", name);
+                            info!("Device removed: {}", name_cstr);
                         }
                     }
                 }

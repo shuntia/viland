@@ -1,4 +1,4 @@
-use crate::event::{KeyState, KEY_LEFTCTRL, KEY_LEFT, KEY_RIGHT, KEY_DOWN, KEY_UP, KEY_LEFTSHIFT, KEY_ESC};
+use crate::event::{KEY_LEFTCTRL, KEY_LEFT, KEY_RIGHT, KEY_DOWN, KEY_UP};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -6,11 +6,12 @@ pub enum Mode {
     Normal,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum KeyAction {
     Press(u16),
     Release(u16),
     Tap(u16),
+    SwitchMode(Mode),
 }
 
 #[derive(Debug, Clone)]
@@ -43,7 +44,7 @@ impl Keymap {
         normal_mode_keys.insert(crate::event::KEY_I, Action::SwitchMode(Mode::Insert));
         normal_mode_keys.insert(crate::event::KEY_A, Action::Sequence(vec![
             KeyAction::Tap(KEY_RIGHT),
-            KeyAction::Tap(KEY_ESC),
+            KeyAction::SwitchMode(Mode::Insert),
         ]));
 
         normal_mode_keys.insert(crate::event::KEY_H, Action::Emit(KEY_LEFT));
@@ -52,11 +53,7 @@ impl Keymap {
         normal_mode_keys.insert(crate::event::KEY_L, Action::Emit(KEY_RIGHT));
 
         normal_mode_keys.insert(crate::event::KEY_0, Action::Emit(crate::event::KEY_HOME));
-        normal_mode_keys.insert(crate::event::KEY_4, Action::EmitChord(vec![
-            KeyAction::Press(KEY_LEFTSHIFT),
-            KeyAction::Tap(crate::event::KEY_4),
-        ]));
-        normal_mode_keys.insert(crate::event::KEY_5, Action::Emit(crate::event::KEY_END));
+        normal_mode_keys.insert(crate::event::KEY_4, Action::Emit(crate::event::KEY_END));
 
         Self { normal_mode_keys }
     }
