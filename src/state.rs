@@ -13,6 +13,14 @@ use crate::keymap::{Action, KeyAction, Keymap, Mode, Motion, Operator};
 use crate::VilandError;
 use tracing::{debug, info};
 
+fn is_modifier_key(key: u16) -> bool {
+    matches!(key,
+        KEY_LEFTSHIFT | KEY_RIGHTSHIFT |
+        KEY_LEFTCTRL  | KEY_RIGHTCTRL  |
+        KEY_LEFTALT   | KEY_RIGHTALT
+    )
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CapsState {
     Idle,
@@ -442,7 +450,11 @@ impl State {
         // Pending operator: consume next key as motion or cancel
         if self.pending_operator.is_some() {
             if ev.key_state == KeyState::Press {
-                if let Some(motion) = Motion::from_key(ev.key_code) {
+                if is_modifier_key(ev.key_code) {
+                    // Let Shift/Ctrl/Alt presses fall through so d$ / d^ work
+                    return Ok(());
+                }
+                if let Some(motion) = Motion::from_key_shifted(ev.key_code, self.is_shift_pressed()) {
                     let op = self.pending_operator.take().unwrap();
                     self.execute_operator_motion(op, motion, device_manager)?;
                     self.consumed_motion_key = Some(ev.key_code);

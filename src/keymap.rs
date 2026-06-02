@@ -5,8 +5,9 @@ use crate::event::{
     KEY_CAPSLOCK, KEY_ESC,
     KEY_H, KEY_J, KEY_K, KEY_L, KEY_W, KEY_B,
     KEY_D, KEY_Q, KEY_S, KEY_X, KEY_N,
-    KEY_O, KEY_ENTER, KEY_END, KEY_DELETE, KEY_F3,
+    KEY_O, KEY_ENTER, KEY_HOME, KEY_END, KEY_DELETE, KEY_F3,
 };
+use crate::event::{KEY_4, KEY_6};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -47,17 +48,23 @@ pub enum Motion {
     Right,
     WordForward,
     WordBackward,
+    EndOfLine,
+    StartOfLine,
 }
 
 impl Motion {
-    pub fn from_key(key: u16) -> Option<Self> {
-        match key {
-            KEY_H => Some(Motion::Left),
-            KEY_J => Some(Motion::Down),
-            KEY_K => Some(Motion::Up),
-            KEY_L => Some(Motion::Right),
-            KEY_W => Some(Motion::WordForward),
-            KEY_B => Some(Motion::WordBackward),
+    /// Resolve a physical key to a motion, taking the current shift state into account.
+    /// `shift` must reflect the physical modifier state at the time the key is pressed.
+    pub fn from_key_shifted(key: u16, shift: bool) -> Option<Self> {
+        match (key, shift) {
+            (KEY_H, _) => Some(Motion::Left),
+            (KEY_J, _) => Some(Motion::Down),
+            (KEY_K, _) => Some(Motion::Up),
+            (KEY_L, _) => Some(Motion::Right),
+            (KEY_W, _) => Some(Motion::WordForward),
+            (KEY_B, _) => Some(Motion::WordBackward),
+            (KEY_4, true) => Some(Motion::EndOfLine),
+            (KEY_6, true) => Some(Motion::StartOfLine),
             _ => None,
         }
     }
@@ -75,6 +82,8 @@ impl Motion {
             Motion::Down => KEY_DOWN,
             Motion::Up => KEY_UP,
             Motion::Right | Motion::WordForward => KEY_RIGHT,
+            Motion::EndOfLine => KEY_END,
+            Motion::StartOfLine => KEY_HOME,
         }
     }
 }
