@@ -1,4 +1,4 @@
-use crate::event::{KEY_LEFTCTRL, KEY_LEFT, KEY_RIGHT, KEY_DOWN, KEY_UP, KEY_LEFTMETA, KEY_Y, KEY_P, KEY_U, KEY_SLASH, KEY_F, KEY_C, KEY_V, KEY_Z};
+use crate::event::{KEY_LEFTCTRL, KEY_LEFT, KEY_RIGHT, KEY_DOWN, KEY_UP, KEY_LEFTMETA, KEY_Y, KEY_P, KEY_U, KEY_SLASH, KEY_F, KEY_C, KEY_V, KEY_Z, KEY_CAPSLOCK, KEY_ESC};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -50,6 +50,7 @@ impl Keymap {
         normal_mode_keys.insert(crate::event::KEY_J, Action::Emit(KEY_DOWN));
         normal_mode_keys.insert(crate::event::KEY_K, Action::Emit(KEY_UP));
         normal_mode_keys.insert(crate::event::KEY_L, Action::Emit(KEY_RIGHT));
+        normal_mode_keys.insert(KEY_ESC, Action::Emit(KEY_CAPSLOCK));
         
         normal_mode_keys.insert(KEY_Y, Action::EmitChord(vec![
             KeyAction::Press(KEY_LEFTCTRL),

@@ -58,13 +58,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Viland starting...");
 
+    // Wait 1s and for keys to be released
+    info!("Waiting for keyboard to settle...");
+    std::thread::sleep(std::time::Duration::from_secs(1));
+
     unsafe {
         setup_signal_handlers();
     }
 
     let mut state = State::new();
     let mut device_manager = DeviceManager::new()?;
-
+    
+    // Check if any keys are currently pressed
+    // We need a temporary device check or just proceed with initialization 
+    // and rely on release_stuck_keys in DeviceManager::try_add_device
     if let Err(e) = device_manager.init() {
         error!("Failed to initialize devices: {}", e);
         return Err(e.into());

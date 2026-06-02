@@ -26,6 +26,7 @@ In Normal mode, the following mappings are active:
 - `j`: Down
 - `k`: Up
 - `l`: Right
+- `Escape`: CapsLock
 
 ### Mode Switching
 - `i`: Switch to Insert mode
