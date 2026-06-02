@@ -285,14 +285,21 @@ impl State {
         }
 
         if self.caps_state == CapsState::HeldCtrl && !ev.is_capslock() {
-            if ev.key_state == KeyState::Press {
-                device_manager.emit_key(ev.key_code, KeyState::Press)?;
-                self.virtual_pressed.insert(ev.key_code);
-            } else if ev.key_state == KeyState::Release {
-                device_manager.emit_key(ev.key_code, KeyState::Release)?;
-                self.virtual_pressed.remove(&ev.key_code);
-            } else if ev.key_state == KeyState::Repeat {
-                device_manager.emit_key(ev.key_code, KeyState::Repeat)?;
+            match ev.key_state {
+                KeyState::Press => {
+                    device_manager.emit_key(ev.key_code, KeyState::Press)?;
+                    self.virtual_pressed.insert(ev.key_code);
+                }
+                KeyState::Release => {
+                    if self.virtual_pressed.remove(&ev.key_code) {
+                        device_manager.emit_key(ev.key_code, KeyState::Release)?;
+                    }
+                }
+                KeyState::Repeat => {
+                    if self.virtual_pressed.contains(&ev.key_code) {
+                        device_manager.emit_key(ev.key_code, KeyState::Repeat)?;
+                    }
+                }
             }
             return Ok(());
         }
@@ -303,11 +310,14 @@ impl State {
                 self.virtual_pressed.insert(ev.key_code);
             }
             KeyState::Release => {
-                device_manager.emit_key_release(ev.key_code)?;
-                self.virtual_pressed.remove(&ev.key_code);
+                if self.virtual_pressed.remove(&ev.key_code) {
+                    device_manager.emit_key_release(ev.key_code)?;
+                }
             }
             KeyState::Repeat => {
-                device_manager.emit_key(ev.key_code, KeyState::Repeat)?;
+                if self.virtual_pressed.contains(&ev.key_code) {
+                    device_manager.emit_key(ev.key_code, KeyState::Repeat)?;
+                }
             }
         }
 
