@@ -4,7 +4,7 @@ use std::os::unix::io::{AsRawFd, RawFd};
 use std::path::PathBuf;
 
 use evdev::*;
-use evdev::uinput::{VirtualDevice};
+use evdev::uinput::VirtualDevice;
 
 use crate::event::{Event, KeyState};
 use crate::errors::VilandError;
@@ -20,6 +20,9 @@ pub struct DeviceManager {
     epoll_fd: RawFd,
     inotify_fd: RawFd,
     grabbed_fds: Vec<RawFd>,
+    had_removal: bool,
+    /// Devices that failed to open on first try; (path, retries_remaining).
+    pending_adds: Vec<(PathBuf, u8)>,
 }
 
 impl DeviceManager {
@@ -43,6 +46,8 @@ impl DeviceManager {
                 epoll_fd,
                 inotify_fd,
                 grabbed_fds: Vec::new(),
+                had_removal: false,
+                pending_adds: Vec::new(),
             })
         }
     }
@@ -71,42 +76,49 @@ impl DeviceManager {
         Ok(())
     }
 
-    fn try_add_device(&mut self, path: &PathBuf) {
+    /// Try to open, grab, and register a keyboard device.
+    /// Returns true if successfully added.
+    fn try_add_device(&mut self, path: &PathBuf) -> bool {
         match Device::open(path) {
             Ok(mut device) => {
-                if self.is_keyboard(&device) {
-                    if let Err(e) = device.set_nonblocking(true) {
-                        warn!("Failed to set non-blocking on {}: {}", path.display(), e);
-                        return;
-                    }
-                    if let Err(e) = device.grab() {
-                        warn!("Failed to grab device {}: {}", path.display(), e);
-                        return;
-                    }
-
-                    self.release_stuck_keys(&mut device);
-
-                    let fd = device.as_raw_fd();
-                    let id = self.get_device_id(&device);
-
-                    if let Err(e) = self.add_to_epoll(fd) {
-                        warn!("Failed to add device {} to epoll: {}", path.display(), e);
-                        let _ = device.ungrab();
-                        return;
-                    }
-
-                    info!("Grabbed keyboard: {} (fd={}, id={})", 
-                        device.name().unwrap_or("unknown"), fd, id);
-                    
-                    self.fd_to_id.insert(fd, id);
-                    self.devices.insert(fd, device);
-                    self.grabbed_fds.push(fd);
+                if !self.is_keyboard(&device) {
+                    return false;
                 }
+                if let Err(e) = device.set_nonblocking(true) {
+                    warn!("Failed to set non-blocking on {}: {}", path.display(), e);
+                    return false;
+                }
+                if let Err(e) = device.grab() {
+                    warn!("Failed to grab device {}: {}", path.display(), e);
+                    return false;
+                }
+
+                self.release_stuck_keys(&mut device);
+
+                let fd = device.as_raw_fd();
+                let id = self.get_device_id(&device);
+
+                if let Err(e) = self.add_to_epoll(fd) {
+                    warn!("Failed to add device {} to epoll: {}", path.display(), e);
+                    let _ = device.ungrab();
+                    return false;
+                }
+
+                info!("Grabbed keyboard: {} (fd={}, id={})",
+                    device.name().unwrap_or("unknown"), fd, id);
+
+                self.fd_to_id.insert(fd, id);
+                self.devices.insert(fd, device);
+                self.grabbed_fds.push(fd);
+                true
             }
             Err(e) => {
+                // Suppress EACCES — expected when udev hasn't set permissions yet;
+                // the path is queued for retry by the caller.
                 if e.kind() != std::io::ErrorKind::PermissionDenied {
                     warn!("Failed to open device {}: {}", path.display(), e);
                 }
+                false
             }
         }
     }
@@ -125,7 +137,6 @@ impl DeviceManager {
 
     fn setup_uinput(&mut self) -> Result<(), VilandError> {
         let mut keys = AttributeSet::<KeyCode>::new();
-        // Add all standard keys
         for i in 0..=575 {
             keys.insert(KeyCode(i));
         }
@@ -162,9 +173,16 @@ impl DeviceManager {
     }
 
     fn is_keyboard(&self, device: &Device) -> bool {
-        // Skip our own virtual device
         if device.input_id().vendor() == OUR_VENDOR && device.input_id().product() == OUR_PRODUCT {
             return false;
+        }
+
+        // Skip pointer devices (mice, gaming mice with extra buttons).
+        // Real keyboards never report relative X/Y movement axes.
+        if let Some(axes) = device.supported_relative_axes() {
+            if axes.contains(RelativeAxisCode::REL_X) || axes.contains(RelativeAxisCode::REL_Y) {
+                return false;
+            }
         }
 
         if let Some(keys) = device.supported_keys() {
@@ -194,7 +212,6 @@ impl DeviceManager {
     fn get_device_id(&self, device: &Device) -> u32 {
         let id = device.input_id();
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        // BusType doesn't implement Hash, so we hash its raw value
         std::hash::Hash::hash(&id.bus_type().0, &mut hasher);
         std::hash::Hash::hash(&id.vendor(), &mut hasher);
         std::hash::Hash::hash(&id.product(), &mut hasher);
@@ -233,7 +250,7 @@ impl DeviceManager {
                 self.epoll_fd,
                 ready_list.as_mut_ptr(),
                 64,
-                100, // timeout 100ms
+                100,
             )
         };
 
@@ -296,6 +313,20 @@ impl DeviceManager {
             self.remove_device(fd);
         }
 
+        // Retry devices that failed to open on a previous cycle
+        let pending = std::mem::take(&mut self.pending_adds);
+        let mut still_pending = Vec::new();
+        for (path, retries) in pending {
+            if self.try_add_device(&path) {
+                info!("Retry succeeded for {}", path.display());
+            } else if retries > 0 {
+                still_pending.push((path, retries - 1));
+            } else {
+                warn!("Giving up on device after retries: {}", path.display());
+            }
+        }
+        self.pending_adds = still_pending;
+
         Ok(events)
     }
 
@@ -307,7 +338,13 @@ impl DeviceManager {
             if let Some(pos) = self.grabbed_fds.iter().position(|&x| x == fd) {
                 self.grabbed_fds.remove(pos);
             }
+            self.had_removal = true;
         }
+    }
+
+    /// Returns true (and resets the flag) if any device was removed since the last call.
+    pub fn take_had_removal(&mut self) -> bool {
+        std::mem::replace(&mut self.had_removal, false)
     }
 
     fn handle_inotify(&mut self) {
@@ -327,10 +364,17 @@ impl DeviceManager {
                     if name_str.starts_with("event") {
                         let path = PathBuf::from("/dev/input").join(name_str);
                         if event.mask & libc::IN_CREATE != 0 {
-                            info!("Inotify: New device detected: {}", path.display());
-                            self.try_add_device(&path);
+                            info!("New device detected: {}", path.display());
+                            if !self.try_add_device(&path) {
+                                // May have failed due to udev not yet setting permissions;
+                                // queue for retry on the next poll cycles.
+                                self.pending_adds.push((path, 30));
+                            }
                         } else if event.mask & libc::IN_DELETE != 0 {
-                            info!("Inotify: Device removed: {}", name_str);
+                            info!("Device removed: {}", name_str);
+                            // EPOLLHUP on the fd handles the actual cleanup; remove from
+                            // retry queue if it was pending.
+                            self.pending_adds.retain(|(p, _)| p.as_os_str() != path.as_os_str());
                         }
                     }
                 }

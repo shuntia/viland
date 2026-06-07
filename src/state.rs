@@ -13,6 +13,10 @@ use crate::keymap::{Action, KeyAction, Keymap, Mode, Motion, Operator};
 use crate::VilandError;
 use tracing::{debug, info};
 
+/// Delay between replayed events during macro playback, so downstream
+/// applications have time to process each key before the next arrives.
+const MACRO_PLAYBACK_DELAY_MS: u64 = 10;
+
 fn is_modifier_key(key: u16) -> bool {
     matches!(key,
         KEY_LEFTSHIFT | KEY_RIGHTSHIFT |
@@ -210,6 +214,7 @@ impl State {
         for (key_code, key_state) in events {
             let ev = crate::event::Event::new(0, key_code, key_state, 0);
             let _ = self.dispatch(ev, dm);
+            std::thread::sleep(std::time::Duration::from_millis(MACRO_PLAYBACK_DELAY_MS));
         }
 
         self.replaying = false;
@@ -729,6 +734,16 @@ impl State {
 
     pub fn release_all_virtual(&self, device_manager: &mut DeviceManager) {
         device_manager.release_all_keys(&self.virtual_pressed);
+    }
+
+    pub fn on_device_removed(&mut self, dm: &mut DeviceManager) {
+        self.release_all_virtual(dm);
+        self.virtual_pressed.clear();
+        self.physical_pressed.clear();
+        self.caps_state = CapsState::Idle;
+        self.alt_pending = false;
+        self.pending_operator = None;
+        self.consumed_motion_key = None;
     }
 }
 

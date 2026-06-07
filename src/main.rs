@@ -107,6 +107,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         return Ok(());
                     }
                 }
+
+                if device_manager.take_had_removal() {
+                    info!("Keyboard removed; releasing all virtual keys");
+                    state.on_device_removed(&mut device_manager);
+                }
             }
             Err(e) => {
                 error!("Poll error: {}", e);
